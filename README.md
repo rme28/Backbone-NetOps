@@ -1,55 +1,57 @@
 # Backbone NetOps
 
-**Le simulateur ultime d'ingenieur reseau.**
+**The ultimate network engineer simulator.**
 
-Un FPS 3D dans lequel tu marches dans une salle serveur, poses de vrais equipements Cisco, les cables, et les configures avec de vraies commandes IOS pour remplir des objectifs et grimper au score. Sauf qu'ici, aucune simulation n'est bidonnee : tout ce qui se passe reseau (routage, switching, CLI) tourne dans le vrai moteur de **Cisco Packet Tracer**, en live, pendant que tu joues.
+A 3D first-person game where you walk through a server room, place real Cisco devices, connect them with cables, and configure them using genuine Cisco IOS commands to complete objectives and climb the leaderboard. The difference is that nothing is faked: all networking (routing, switching, CLI) runs live on the real **Cisco Packet Tracer** engine while you play.
 
-Pas de faux terminal qui accepte n'importe quoi. Si tu configures mal une interface, ca ne marchera pas, exactement comme sur un vrai routeur.
+No fake terminal that accepts anything. If you misconfigure an interface, it won't work-exactly as it would on a real router. Unless it's a Cisco Packet Tracer issue, as usual. In a future release, a Debug button will be added, allowing you to restart or reload the Packet Tracer topology running in the background to rule out potential Cisco Packet Tracer bugs.
+## The Concept
 
-## Le concept
+You start in a server room. You place a router, a switch, and a PC. You connect them with cables. You open a console session and type real Cisco IOS commands. The game simply gives you a body and hands inside a server room; **Packet Tracer** handles the network simulation behind the scenes, as if you were sitting in front of the real Cisco software-except you're physically inside it.
 
-Tu es dans une salle. Tu poses un routeur, un switch, un PC. Tu les cables. Tu ouvres une session sur l'equipement et tu tapes du vrai IOS. Le jeu ne fait que te donner un corps et des mains dans une salle serveur ; c'est Packet Tracer qui simule le reseau derriere, comme si tu etais assis devant le vrai logiciel Cisco, sauf que tu y es physiquement.
+## How It Works
 
-## Comment ca marche
+The project consists of three components:
 
-Trois briques :
+- **The game** (Godot 4 / GDScript): the 3D environment, movement, and interactions.
+- **The bridge** (Python): connects the game to Packet Tracer.
+- **Packet Tracer + PTBuilder**: the real Cisco networking engine running in the background.
 
-- **Le jeu** (Godot 4 / GDScript) : la salle 3D, le deplacement, les interactions.
-- **Le pont** (Python) : fait la liaison entre le jeu et Packet Tracer.
-- **Packet Tracer + PTBuilder** : le vrai moteur reseau Cisco, qui tourne en arriere-plan.
+Packet Tracer is **not** included with the game (due to Cisco licensing). You must install it yourself, free of charge, through a Cisco NetAcad account, just as you would for any other Cisco tool.
 
-Packet Tracer n'est jamais fourni avec le jeu (licence Cisco oblige). Tu l'installes toi-meme, gratuitement, via un compte Cisco NetAcad, comme pour n'importe quel outil.
+## Current Status: Alpha 0.1.0
 
-## Etat actuel : Alpha 0.1.0
+The project is still in its very early stages. The following features are already working and have been validated with **Packet Tracer 9.0.0**:
 
-C'est tres tot. Voici ce qui marche deja, valide en conditions reelles sur Packet Tracer 9.0.0 :
+- Move around a 3D server room in first-person (WASD + mouse)
+- Place a router in the game and have it instantly appear in Packet Tracer
+- Connect devices with cables
+- Configure devices using real Cisco IOS commands (hostname, IP addresses, interfaces) and see the configuration applied live
 
-- Se deplacer dans une salle 3D en vue FPS (ZQSD + souris)
-- Poser un routeur dans le jeu et le voir apparaitre instantanement dans Packet Tracer
-- Le cabler entre deux equipements
-- Le configurer avec de vraies commandes IOS (hostname, IP, interfaces) et voir la config s'appliquer reellement
+Not implemented yet: a full equipment palette, mouse-based cabling, an in-game interactive IOS terminal, objectives and scoring, automatic validation (ping tests, VLAN verification, etc.). At this stage, the project is a proof of concept demonstrating that the idea works—not yet a complete game.
 
-Ce qui n'existe pas encore : palette d'equipements, cablage a la souris, terminal IOS jouable en jeu, objectifs et systeme de score, verification automatique (ping, VLAN...). Bref, c'est une fondation qui prouve que le concept tient la route, pas encore un jeu.
+See [CHANGELOG.md](CHANGELOG.md) for the complete version history.
 
-Voir [CHANGELOG.md](CHANGELOG.md) pour le detail des versions.
+## Running the Project
 
-## Faire tourner le projet
-
-Prerequis : [Cisco Packet Tracer](https://www.netacad.com/) (dernier version) + l'extension [PTBuilder](https://github.com/kimmknight/PTBuilder), avec l'IPC active.
+**Prerequisites:** [Cisco Packet Tracer](https://www.netacad.com/) (latest version) + the [PTBuilder](https://github.com/kimmknight/PTBuilder) extension, with IPC enabled.
 
 ```bash
-# 1. Lancer le pont
+# 1. Start the bridge
 cd bridge
 pip install -r requirements.txt
 python server.py
 
-# 2. Dans Packet Tracer : Extensions > Builder Code Editor, coller le bootstrap de polling (voir bridge/README.md)
+# 2. In Packet Tracer: Extensions > Builder Code Editor,
+#    paste the polling bootstrap (see bridge/README.md)
 
-# 3. Lancer le jeu dans Godot 4
+# 3. Launch the game in Godot 4
 ```
 
-Details complets dans [bridge/README.md](bridge/README.md).
+Full setup instructions are available in [bridge/README.md](bridge/README.md).
 
 ## Releases
 
-Les versions sont taguees (`vX.Y.Z-alpha` tant qu'on n'est pas stable). Voir [RELEASING.md](RELEASING.md) pour le detail du processus, et l'onglet [Releases](../../releases) pour telecharger une version precise.
+Versions are tagged using the `vX.Y.Z-alpha` format until the project reaches a stable release.
+
+See [RELEASING.md](RELEASING.md) for the full release process, and the [Releases](../../releases) page to download a specific version.
