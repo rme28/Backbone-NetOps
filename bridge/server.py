@@ -138,6 +138,12 @@ def get_result(job_id):
     return jsonify(res)
 
 
+@app.route("/health", methods=["GET"])
+def health():
+    # Sonde de vitalité pour le jeu (ne consomme PAS la file, contrairement à /next).
+    return jsonify({"ok": True})
+
+
 @app.route("/next", methods=["GET"])
 def get_next():
     with lock:
