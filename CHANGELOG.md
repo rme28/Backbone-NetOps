@@ -1,61 +1,73 @@
 # Changelog
 
-Toutes les évolutions notables du projet sont consignées ici.
+All notable changes to this project are documented here.
 
-Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
-versions selon [SemVer](https://semver.org/lang/fr/) avec canal de pré-version
-(`-alpha`, `-beta`, `-rc`) tant qu'on est avant la `1.0.0`.
+Format inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+versions follow [SemVer](https://semver.org/) with a pre-release channel
+(`-alpha`, `-beta`, `-rc`) until the project reaches `1.0.0`.
 
-## [Non publié]
+## [Unreleased]
 
-_Rien pour l'instant._
+### Added
+- **Objectives and scoring system**: a declarative catalog of objectives
+  (`game/scripts/missions/objectives.gd`), evaluated reactively against the
+  game's event journal. Score and completed objectives are part of the save.
+  An in-game panel shows the score and the objective checklist live.
+
+### Changed
+- **Project restructuring** for scalability: `game/` is now organized into
+  `scenes/` (world, player, ui), `scripts/` (core, network, player, world, ui,
+  missions), and `resources/`. `bridge/` is split into `server.py` (Flask/HTTP),
+  `commands.py` (action translation), and `packettracer.py` (low-level PTBuilder
+  protocol/escaping). Adding a new command or a new equipment type should now
+  only touch one or two files instead of a single monolithic script.
 
 ## [0.2.0-alpha] - 2026-07-19
 
-Système de save complet et confort technique : le jeu tourne quasi tout seul
-(auto-lancement du pont) et une partie peut être sauvegardée, quittée et
-rechargée avec Packet Tracer qui reflète exactement l'état chargé.
+Complete save system and quality-of-life pass: the game mostly runs itself
+(bridge auto-launch), and a run can be saved, quit, and reloaded with Packet
+Tracer reflecting exactly the loaded state.
 
-### Ajouté
-- **Auto-lancement du pont** : le jeu detecte le pont au demarrage et le lance
-  automatiquement s'il est absent, avec un statut visible en jeu (connecte / erreur).
-- **Menu principal** : nouvelle partie, charger une partie, supprimer une sauvegarde.
-- **Systeme de sauvegarde par rejeu** (event sourcing) : chaque action est
-  journalisee ; sauvegarder ecrit le journal, charger le rejoue dans un PT vide.
-  Le jeu est la seule source de verite (ne depend d'aucune sauvegarde de PT).
-- **Menu pause** (Echap) : reprendre, sauvegarder, retour au menu principal.
-- **Vider PT automatiquement** : nouvelle partie et chargement partent d'un canvas
-  Packet Tracer propre, via `ipc.appWindow().fileNew(false)` (decouvert en explorant
-  l'API interne de PT). PT reflete desormais exactement la partie en cours.
+### Added
+- **Bridge auto-launch**: the game detects the bridge on startup and launches
+  it automatically if missing, with a status message shown in-game (connected / error).
+- **Main menu**: new game, load a save, delete a save.
+- **Save system via event replay** (event sourcing): every action is logged;
+  saving writes the journal, loading replays it into an empty PT instance.
+  The game is the single source of truth (does not rely on any PT-native save).
+- **Pause menu** (Esc): resume, save, return to main menu.
+- **Automatic PT reset**: starting a new game or loading a save now clears the
+  Packet Tracer canvas first, via `ipc.appWindow().fileNew(false)` (found by
+  exploring PT's internal API). PT now always reflects the current save exactly.
 
 ## [0.1.0-alpha] - 2026-07-19
 
-Première tranche verticale jouable : marcher dans une salle 3D → poser un
-équipement → le voir apparaître dans le vrai moteur Cisco Packet Tracer.
+First playable vertical slice: walk through a 3D room, place equipment, see it
+appear in the real Cisco Packet Tracer engine.
 
-### Ajouté
-- **Pont Python** (`bridge/server.py`) : serveur HTTP boîte aux lettres entre le
-  jeu et PTBuilder (`POST /command`, `GET /next`, `POST /result`,
+### Added
+- **Python bridge** (`bridge/server.py`): HTTP mailbox server between the game
+  and PTBuilder (`POST /command`, `GET /next`, `POST /result`,
   `GET /result/<id>`, `GET /health`).
-- Traduction des commandes haut-niveau (`addDevice`, `addLink`, `configureIos`,
-  `configurePcIp`, `getDevices`, `raw`) en code JS PTBuilder + enrobage XHR sortant.
-- File d'attente avec `delay_before` pour espacer création et configuration
-  (temps de boot des équipements).
-- **Jeu Godot 4.7** (`game/`) : salle 3D FPS construite par code, déplacement
-  ZQSD + souris, autoload `Bridge` (client HTTP), touche `E` pour poser un
-  routeur (cube en jeu + équipement réel dans Packet Tracer).
+- Translation of high-level commands (`addDevice`, `addLink`, `configureIos`,
+  `configurePcIp`, `getDevices`, `raw`) into PTBuilder JS + outbound XHR wrapping.
+- Job queue with `delay_before` to space out device creation and configuration
+  (device boot time).
+- **Godot 4.7 game** (`game/`): 3D FPS room built in code, WASD + mouse movement,
+  `Bridge` autoload (HTTP client), `E` key to place a router (cube in-game and
+  a real device in Packet Tracer).
 
-### Corrigé / découvert
-- **CORS obligatoire pour Packet Tracer 9.x** : sans en-têtes
-  `Access-Control-Allow-Origin` sur le pont, le webview de PT bloque la lecture
-  des réponses `GET /next` et le polling échoue en silence. Ajout d'un
-  `@app.after_request`. Documenté dans `CLAUDE.md` §4.6bis.
+### Fixed / discovered
+- **CORS is required for Packet Tracer 9.x**: without
+  `Access-Control-Allow-Origin` headers on the bridge, the PT webview blocks
+  reading `GET /next` responses and polling fails silently. Fixed with an
+  `@app.after_request` hook (see `bridge/README.md`).
 
-### Validé sur le terrain
-- PT 9.0.0 : `addDevice`, `addLink` (lien UP), `configureIosDevice` (hostname +
-  IP + `no shutdown` appliqués), `getDevices`.
-- Chaîne complète depuis le jeu : les routeurs posés en 3D apparaissent dans PT.
+### Validated in the field
+- PT 9.0.0: `addDevice`, `addLink` (link UP), `configureIosDevice` (hostname,
+  IP, and `no shutdown` applied), `getDevices`.
+- Full chain from the game: routers placed in 3D appear in PT.
 
-[Non publié]: https://github.com/rme28/Backbone-NetOps/compare/v0.2.0-alpha...HEAD
+[Unreleased]: https://github.com/rme28/Backbone-NetOps/compare/v0.2.0-alpha...HEAD
 [0.2.0-alpha]: https://github.com/rme28/Backbone-NetOps/compare/v0.1.0-alpha...v0.2.0-alpha
 [0.1.0-alpha]: https://github.com/rme28/Backbone-NetOps/releases/tag/v0.1.0-alpha

@@ -4,10 +4,11 @@ Pont HTTP entre le jeu Godot et PTBuilder (dans Cisco Packet Tracer).
 Endpoints :
   POST /command   -> le jeu dépose une commande de haut niveau (JSON), reçoit un job_id
   GET  /result/<job_id> -> le jeu vient lire le résultat d'un job (pending / ok / error)
+  GET  /health     -> sonde de vitalité pour le jeu (ne consomme pas la file)
   GET  /next       -> PTBuilder (polling) vient chercher le prochain code JS à exécuter
   POST /result     -> PTBuilder repose le résultat d'un job exécuté
 
-Voir CLAUDE.md section 3 et 4 pour le protocole complet et les pièges connus.
+Voir bridge/README.md pour le protocole complet et les pièges connus (CORS, timing).
 """
 
 import json
@@ -18,97 +19,25 @@ from collections import deque
 
 from flask import Flask, request, jsonify, Response
 
+from commands import build_action_code
+from packettracer import wrap_job
+
 app = Flask(__name__)
 lock = threading.Lock()
+
+queue = deque()      # jobs en attente d'être servis à PTBuilder : {id, js, not_before}
+results = {}         # job_id -> {"status": "pending"|"ok"|"error", "result"/"error": ...}
 
 
 @app.after_request
 def add_cors_headers(response):
     # PT 9.x applique le CORS strictement sur son webview : sans ces en-têtes, le JS
     # peut envoyer la requête (le serveur la reçoit) mais ne peut PAS lire la réponse
-    # -> onerror se déclenche et $se('runCode',...) n'est jamais appelé. Voir diag.
+    # -> onerror se déclenche et $se('runCode',...) n'est jamais appelé.
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return response
-
-queue = deque()      # jobs en attente d'être servis à PTBuilder : {id, js, not_before}
-results = {}         # job_id -> {"status": "pending"|"ok"|"error", "result"/"error": ...}
-
-BRIDGE_URL = "http://127.0.0.1:8081"
-
-
-def js_string(value):
-    """Sérialise une valeur Python en littéral JS sûr (via JSON)."""
-    return json.dumps(value)
-
-
-def build_action_code(cmd):
-    """Traduit une commande de haut niveau en code JS PTBuilder qui pose `result`."""
-    action = cmd.get("action")
-
-    if action == "addDevice":
-        return "addDevice({name},{model},{x},{y}); result=true;".format(
-            name=js_string(cmd["name"]),
-            model=js_string(cmd["model"]),
-            x=js_string(cmd.get("x", 0)),
-            y=js_string(cmd.get("y", 0)),
-        )
-
-    if action == "addLink":
-        return "addLink({d1},{i1},{d2},{i2},{cable}); result=true;".format(
-            d1=js_string(cmd["dev1"]), i1=js_string(cmd["iface1"]),
-            d2=js_string(cmd["dev2"]), i2=js_string(cmd["iface2"]),
-            cable=js_string(cmd.get("cable", "straight")),
-        )
-
-    if action == "configureIos":
-        ios = "\n".join(cmd["commands"])
-        return "configureIosDevice({name},{ios}); result=true;".format(
-            name=js_string(cmd["name"]), ios=js_string(ios),
-        )
-
-    if action == "configurePcIp":
-        return "configurePcIp({name},{dhcp},{ip},{mask},{gw}); result=true;".format(
-            name=js_string(cmd["name"]), dhcp=js_string(cmd.get("dhcp", False)),
-            ip=js_string(cmd.get("ip", "")), mask=js_string(cmd.get("mask", "")),
-            gw=js_string(cmd.get("gateway", "")),
-        )
-
-    if action == "getDevices":
-        return "result = getDevices();"
-
-    if action == "clearTopology":
-        # Vide le canvas PT (equivalent File > New). L'argument false = ne pas
-        # demander de sauvegarder. Valide empiriquement sur PT 9.0.0.
-        return "ipc.appWindow().fileNew(false); result = true;"
-
-    if action == "raw":
-        # échappatoire : code JS PTBuilder brut fourni tel quel (doit poser `result`)
-        return cmd["code"]
-
-    raise ValueError("action inconnue: {}".format(action))
-
-
-def wrap_job(job_id, action_code):
-    """Enrobe le code d'action pour qu'il renvoie son résultat au pont via XHR sortant
-    (voir CLAUDE.md 4.5). Pas de commentaires JS ici, tout sur une portée fonctionnelle
-    unique -- le Script Engine de PTBuilder est sensible à ça (4.6)."""
-    report_ok = (
-        "var payload=JSON.stringify({{id:{jid},ok:true,result:result}});"
-        "window.webview.evaluateJavaScriptAsync("
-        "\"var x=new XMLHttpRequest();x.open('POST','{url}/result',true);x.send(\"+JSON.stringify(payload)+\");\");"
-    ).format(jid=js_string(job_id), url=BRIDGE_URL)
-
-    report_err = (
-        "var payload=JSON.stringify({{id:{jid},ok:false,error:String(e)}});"
-        "window.webview.evaluateJavaScriptAsync("
-        "\"var x=new XMLHttpRequest();x.open('POST','{url}/result',true);x.send(\"+JSON.stringify(payload)+\");\");"
-    ).format(jid=js_string(job_id), url=BRIDGE_URL)
-
-    return "(function(){{var result=null;try{{{action}{report_ok}}}catch(e){{{report_err}}}}})();".format(
-        action=action_code, report_ok=report_ok, report_err=report_err,
-    )
 
 
 @app.route("/command", methods=["POST"])

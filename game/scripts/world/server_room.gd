@@ -4,7 +4,7 @@ extends Node3D
 ## visuellement, envoye a Packet Tracer, et enregistre dans GameState pour la
 ## sauvegarde par rejeu. Au chargement d'une partie, les evenements sont rejoues.
 
-const MENU_SCENE := "res://menu.tscn"
+const MENU_SCENE := "res://scenes/ui/menu.tscn"
 
 var device_count := 0
 var _paused := false
@@ -14,6 +14,8 @@ var _player: CharacterBody3D
 var _status_label: Label
 var _feedback_label: Label
 var _pause_menu: CanvasLayer
+var _score_label: Label
+var _objectives_list: VBoxContainer
 
 
 func _ready() -> void:
@@ -21,13 +23,20 @@ func _ready() -> void:
 	_build_environment()
 	_build_room()
 	_build_ui()
+	_build_objectives_panel()
 	_build_pause_menu()
 
 	Bridge.status_changed.connect(_on_bridge_status_changed)
 	Bridge.ensure_running()
 
+	Objectives.objective_completed.connect(_on_objective_completed)
+	Objectives.objectives_changed.connect(_refresh_objectives_panel)
+
 	# Reconstruit immediatement les visuels 3D depuis la sauvegarde (sans PT).
 	_rebuild_visuals_from_save()
+	# Rattrape les objectifs eventuellement ajoutes au catalogue depuis la sauvegarde.
+	Objectives.evaluate()
+	_refresh_objectives_panel()
 
 
 # --- Construction de la scene -------------------------------------------------
@@ -98,6 +107,49 @@ func _build_ui() -> void:
 	layer.add_child(_feedback_label)
 
 	add_child(layer)
+
+
+func _build_objectives_panel() -> void:
+	var layer := CanvasLayer.new()
+	add_child(layer)
+
+	var panel := PanelContainer.new()
+	panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	panel.position = Vector2(-260, 12)
+	panel.custom_minimum_size = Vector2(240, 0)
+	layer.add_child(panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+	panel.add_child(vbox)
+
+	_score_label = Label.new()
+	_score_label.add_theme_font_size_override("font_size", 18)
+	vbox.add_child(_score_label)
+
+	vbox.add_child(HSeparator.new())
+
+	_objectives_list = VBoxContainer.new()
+	_objectives_list.add_theme_constant_override("separation", 2)
+	vbox.add_child(_objectives_list)
+
+
+func _refresh_objectives_panel() -> void:
+	_score_label.text = "Score : %d" % GameState.score
+
+	for child in _objectives_list.get_children():
+		child.queue_free()
+
+	for obj in Objectives.get_display_list():
+		var row := Label.new()
+		var mark := "[x]" if obj["done"] else "[ ]"
+		row.text = "%s %s (+%d)" % [mark, obj["title"], obj["points"]]
+		row.modulate = Color(0.5, 0.9, 0.5) if obj["done"] else Color(0.8, 0.8, 0.8)
+		_objectives_list.add_child(row)
+
+
+func _on_objective_completed(objective: Dictionary) -> void:
+	_flash_feedback("Objectif accompli : %s (+%d pts)" % [objective["title"], objective["points"]])
 
 
 func _build_pause_menu() -> void:

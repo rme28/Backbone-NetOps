@@ -15,12 +15,14 @@ signal event_recorded(event: Dictionary)
 var save_name := ""
 var score := 0
 var events: Array = []
+var completed_objectives: Array = []
 
 
 func new_game(p_name: String) -> void:
 	save_name = p_name
 	score = 0
 	events.clear()
+	completed_objectives.clear()
 
 
 ## Enregistre un evenement dans le journal de la partie en cours.
@@ -40,6 +42,7 @@ func to_dict() -> Dictionary:
 		"saved_at": Time.get_datetime_string_from_system(),
 		"score": score,
 		"events": events,
+		"completed_objectives": completed_objectives,
 	}
 
 
@@ -83,6 +86,9 @@ func load_from(p_name: String) -> bool:
 	for e in dict.get("events", []):
 		if typeof(e) == TYPE_DICTIONARY:
 			events.append(e)
+	completed_objectives.clear()
+	for id in dict.get("completed_objectives", []):
+		completed_objectives.append(str(id))
 	print("[save] partie chargee : %s (%d evenements)" % [path, events.size()])
 	return true
 

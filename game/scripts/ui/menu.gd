@@ -2,7 +2,7 @@ extends Control
 ## Menu principal : Nouvelle partie / Charger / Quitter.
 ## Construit entierement par code (aucune manip souris dans l'editeur).
 
-const GAME_SCENE := "res://main.tscn"
+const GAME_SCENE := "res://scenes/world/server_room.tscn"
 
 var _name_edit: LineEdit
 var _saves_list: ItemList
