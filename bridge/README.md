@@ -114,3 +114,40 @@ the models this game actually uses, but don't trust the exotic categories blindl
 
 Discovery method: submit a `"raw"` action with JS that enumerates
 `Object.getOwnPropertyNames(ipc)` (and sub-objects) and inspect the result.
+
+## Real interactive CLI access: `getCommandLine()`
+
+`ipc.network().getDevice(name).getCommandLine()` returns a live command-line
+object wired to the device's actual CLI - the same one shown in PT's own
+"Router0"-style config window. This is a full interactive terminal, not the
+one-shot/invisible `configureIosDevice`:
+
+- `enterCommand(str)` - types a full command and presses Enter (handles
+  multi-line flows like `configure terminal` / `interface ...` / `end` fine
+  when called once per line).
+- `getOutput()` - returns the **entire CLI transcript** so far (boot banners,
+  prompts, command echoes, error messages - everything a human would see).
+- `getPrompt()` - the current prompt string (e.g. `"Router#"`, or a yes/no
+  question during the setup wizard).
+- `enterChar(c)` - single character input, for interactive prompts.
+
+Validated end to end on PT 9.0.0: booted a router, answered "no" to the setup
+wizard, `enable`, configured an interface IP, then ran `ping <ip>` and read
+back the real result via `getOutput()`:
+
+```
+Sending 5, 100-byte ICMP Echos to 192.168.50.1, timeout is 2 seconds:
+.....
+Success rate is 0 percent (0/5)
+```
+
+The `Success rate is X percent (Y/Z)` line is reliably parseable - this is how
+the game can know whether a ping actually succeeded (for objectives/scoring),
+without needing to pop or embed any Packet Tracer window. It also means an
+in-game terminal can be a thin pass-through to this object instead of a fake
+CLI: send what the player types via `enterCommand`, poll `getOutput()`/`getPrompt()`
+for the response.
+
+Caveat: commands take real (simulated) time to resolve - e.g. a 5-packet ping
+takes several seconds before `getOutput()` reflects the final result. Poll
+with a delay rather than reading immediately after sending a command.

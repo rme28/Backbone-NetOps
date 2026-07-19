@@ -26,6 +26,11 @@ versions follow [SemVer](https://semver.org/) with a pre-release channel
   `deviceTypes`/`allDeviceTypes` objects. Not wired into the game palette yet
   (still using the static JSON) - groundwork for a richer, auto-updating
   equipment palette.
+- **Discovered real interactive CLI access** via `getCommandLine()` on a PT
+  device object (`enterCommand`, `getOutput`, `getPrompt`): full read/write
+  access to the actual device terminal, including parseable `ping` results
+  (`Success rate is X percent`). See `bridge/README.md`. Not wired into the
+  game yet - unlocks a real in-game IOS terminal and ping-based objectives.
 
 ### Changed
 - **Project restructuring** for scalability: `game/` is now organized into
