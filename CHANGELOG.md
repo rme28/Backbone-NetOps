@@ -16,11 +16,9 @@ versions selon [SemVer](https://semver.org/lang/fr/) avec canal de pré-version
   journalisee ; sauvegarder ecrit le journal, charger le rejoue dans un PT vide.
   Le jeu est la seule source de verite (ne depend d'aucune sauvegarde de PT).
 - **Menu pause** (Echap) : reprendre, sauvegarder, retour au menu principal.
-
-### A faire
-- Commande "vider PT" (investigation empirique cote PTBuilder) pour que "nouvelle
-  partie" et le rejeu partent d'un PT reellement vide. Pour l'instant : vider PT
-  a la main (File > New) avant de charger une partie.
+- **Vider PT automatiquement** : nouvelle partie et chargement partent d'un canvas
+  Packet Tracer propre, via `ipc.appWindow().fileNew(false)` (decouvert en explorant
+  l'API interne de PT). PT reflete desormais exactement la partie en cours.
 
 ## [0.1.0-alpha] - 2026-07-19
 

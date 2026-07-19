@@ -78,6 +78,11 @@ def build_action_code(cmd):
     if action == "getDevices":
         return "result = getDevices();"
 
+    if action == "clearTopology":
+        # Vide le canvas PT (equivalent File > New). L'argument false = ne pas
+        # demander de sauvegarder. Valide empiriquement sur PT 9.0.0.
+        return "ipc.appWindow().fileNew(false); result = true;"
+
     if action == "raw":
         # échappatoire : code JS PTBuilder brut fourni tel quel (doit poser `result`)
         return cmd["code"]

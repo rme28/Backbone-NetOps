@@ -97,12 +97,10 @@ func _spawn_bridge() -> void:
 	_bridge_pid = pid
 
 
-## Vide la topologie Packet Tracer (avant de rejouer une sauvegarde ou pour une
-## nouvelle partie). TODO : investigation empirique cote PT (commande "new" via
-## IPC, ou suppression des equipements un a un). Pour l'instant no-op : PT doit
-## etre vide a la main (File > New) avant de charger une partie.
+## Vide la topologie Packet Tracer (equivalent File > New). Utilise avant de
+## rejouer une sauvegarde ou de demarrer une nouvelle partie, pour partir propre.
 func clear_topology() -> void:
-	push_warning("[bridge] clear_topology() pas encore implemente - vider PT a la main (File > New) avant de charger")
+	_post_command({"action": "clearTopology"})
 
 
 func add_device(device_name: String, model: String, x: int, y: int) -> void:

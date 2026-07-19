@@ -10,6 +10,9 @@ var _feedback: Label
 
 
 func _ready() -> void:
+	# Toujours rendre la souris visible dans le menu (au cas ou on arrive depuis le jeu).
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
 	var bg := ColorRect.new()
 	bg.color = Color(0.09, 0.10, 0.12)
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)

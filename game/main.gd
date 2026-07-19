@@ -152,15 +152,18 @@ func _rebuild_visuals_from_save() -> void:
 			_apply_event_visual(event)
 
 
-## Rejoue le journal dans Packet Tracer (une seule fois, quand le pont est pret).
+## Synchronise Packet Tracer avec l'etat du jeu, une fois le pont pret :
+## vide PT (nouvelle partie comme chargement partent d'un canvas propre), puis
+## rejoue les evenements de la partie chargee (aucun si nouvelle partie).
 func _replay_to_pt() -> void:
-	if _pt_replayed or not GameState.has_content():
+	if _pt_replayed:
 		return
 	_pt_replayed = true
 	Bridge.clear_topology()
 	for event in GameState.events:
 		_apply_event_pt(event)
-	print("[game] %d evenement(s) rejoue(s) vers Packet Tracer" % GameState.events.size())
+	if GameState.has_content():
+		print("[game] %d evenement(s) rejoue(s) vers Packet Tracer" % GameState.events.size())
 
 
 func _apply_event_visual(event: Dictionary) -> void:
@@ -249,7 +252,7 @@ func _on_save_pressed() -> void:
 
 
 func _on_quit_to_menu() -> void:
-	_player.set_active(true)  # remet la souris en etat normal avant le menu
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE  # souris libre pour le menu
 	get_tree().change_scene_to_file(MENU_SCENE)
 
 
