@@ -1,19 +1,36 @@
 extends Node3D
-## Construit la salle 3D par code (aucune manip souris necessaire) et gere
-## l'interaction : appuyer sur E pose un routeur - un cube apparait dans le jeu
-## ET l'equipement apparait dans Packet Tracer via le pont Python.
+## Salle 3D + boucle d'interaction. Construit la salle par code (aucune manip
+## souris necessaire). Chaque pose d'equipement est un EVENEMENT : applique
+## visuellement, envoye a Packet Tracer, et enregistre dans GameState pour la
+## sauvegarde par rejeu. Au chargement d'une partie, les evenements sont rejoues.
+
+const MENU_SCENE := "res://menu.tscn"
 
 var device_count := 0
+var _paused := false
+var _pt_replayed := false
+
+var _player: CharacterBody3D
 var _status_label: Label
+var _feedback_label: Label
+var _pause_menu: CanvasLayer
 
 
 func _ready() -> void:
+	_player = $Player
 	_build_environment()
 	_build_room()
 	_build_ui()
+	_build_pause_menu()
+
 	Bridge.status_changed.connect(_on_bridge_status_changed)
 	Bridge.ensure_running()
 
+	# Reconstruit immediatement les visuels 3D depuis la sauvegarde (sans PT).
+	_rebuild_visuals_from_save()
+
+
+# --- Construction de la scene -------------------------------------------------
 
 func _build_environment() -> void:
 	var env := Environment.new()
@@ -67,7 +84,7 @@ func _build_ui() -> void:
 	var layer := CanvasLayer.new()
 
 	var help := Label.new()
-	help.text = "ZQSD : se deplacer    Souris : regarder    E : poser un routeur    Echap : liberer la souris"
+	help.text = "ZQSD : se deplacer    Souris : regarder    E : poser un routeur    Echap : menu pause"
 	help.position = Vector2(16, 12)
 	layer.add_child(help)
 
@@ -75,35 +92,94 @@ func _build_ui() -> void:
 	_status_label.position = Vector2(16, 40)
 	layer.add_child(_status_label)
 
+	_feedback_label = Label.new()
+	_feedback_label.position = Vector2(16, 68)
+	_feedback_label.modulate = Color(0.5, 0.9, 0.5)
+	layer.add_child(_feedback_label)
+
 	add_child(layer)
 
 
-func _on_bridge_status_changed(state: String, message: String) -> void:
-	_status_label.text = "[Pont] %s" % message
-	match state:
-		"connected":
-			_status_label.modulate = Color(0.4, 0.9, 0.4)
-		"error":
-			_status_label.modulate = Color(0.95, 0.3, 0.3)
-		_:
-			_status_label.modulate = Color(0.9, 0.8, 0.3)
+func _build_pause_menu() -> void:
+	_pause_menu = CanvasLayer.new()
+	_pause_menu.visible = false
+	add_child(_pause_menu)
+
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.6)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_pause_menu.add_child(dim)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_pause_menu.add_child(center)
+
+	var vbox := VBoxContainer.new()
+	vbox.custom_minimum_size = Vector2(320, 0)
+	vbox.add_theme_constant_override("separation", 10)
+	center.add_child(vbox)
+
+	var title := Label.new()
+	title.text = "PAUSE"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 28)
+	vbox.add_child(title)
+
+	var resume_btn := Button.new()
+	resume_btn.text = "Reprendre"
+	resume_btn.pressed.connect(_toggle_pause)
+	vbox.add_child(resume_btn)
+
+	var save_btn := Button.new()
+	save_btn.text = "Sauvegarder"
+	save_btn.pressed.connect(_on_save_pressed)
+	vbox.add_child(save_btn)
+
+	var menu_btn := Button.new()
+	menu_btn.text = "Menu principal"
+	menu_btn.pressed.connect(_on_quit_to_menu)
+	vbox.add_child(menu_btn)
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("interact"):
-		_place_device()
+# --- Sauvegarde / rejeu -------------------------------------------------------
+
+## Reconstruit les cubes 3D depuis le journal (sans toucher a PT).
+func _rebuild_visuals_from_save() -> void:
+	device_count = 0
+	for event in GameState.events:
+		if event.get("type", "") == "place_device":
+			device_count += 1
+			_apply_event_visual(event)
 
 
-func _place_device() -> void:
-	device_count += 1
-	var dev_name := "GameR%d" % device_count
+## Rejoue le journal dans Packet Tracer (une seule fois, quand le pont est pret).
+func _replay_to_pt() -> void:
+	if _pt_replayed or not GameState.has_content():
+		return
+	_pt_replayed = true
+	Bridge.clear_topology()
+	for event in GameState.events:
+		_apply_event_pt(event)
+	print("[game] %d evenement(s) rejoue(s) vers Packet Tracer" % GameState.events.size())
 
-	var player := $Player as CharacterBody3D
-	var forward := -player.global_transform.basis.z
-	var pos := player.global_position + forward * 2.5
-	pos.y = 0.5
 
-	# Cube visuel dans le jeu.
+func _apply_event_visual(event: Dictionary) -> void:
+	match event.get("type", ""):
+		"place_device":
+			var wp: Array = event.get("world_pos", [0, 0.5, 0])
+			_spawn_device_mesh(Vector3(wp[0], wp[1], wp[2]))
+
+
+func _apply_event_pt(event: Dictionary) -> void:
+	match event.get("type", ""):
+		"place_device":
+			Bridge.add_device(
+				event.get("name", ""), event.get("model", "2911"),
+				int(event.get("pt_x", 100)), int(event.get("pt_y", 100))
+			)
+
+
+func _spawn_device_mesh(pos: Vector3) -> void:
 	var box := MeshInstance3D.new()
 	var mesh := BoxMesh.new()
 	mesh.size = Vector3(1, 0.6, 1)
@@ -114,6 +190,70 @@ func _place_device() -> void:
 	add_child(box)
 	box.global_position = pos
 
-	# Envoi au pont -> l'equipement apparait dans Packet Tracer.
-	Bridge.add_device(dev_name, "2911", 100 + device_count * 60, 100)
-	print("Pose %s a %s" % [dev_name, pos])
+
+# --- Entrees ------------------------------------------------------------------
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		_toggle_pause()
+	elif not _paused and event.is_action_pressed("interact"):
+		_place_device()
+
+
+func _toggle_pause() -> void:
+	_paused = not _paused
+	_pause_menu.visible = _paused
+	_player.set_active(not _paused)
+
+
+func _place_device() -> void:
+	device_count += 1
+	var dev_name := "GameR%d" % device_count
+	var forward := -_player.global_transform.basis.z
+	var pos := _player.global_position + forward * 2.5
+	pos.y = 0.5
+
+	var event := {
+		"type": "place_device",
+		"name": dev_name,
+		"model": "2911",
+		"pt_x": 100 + device_count * 60,
+		"pt_y": 100,
+		"world_pos": [pos.x, pos.y, pos.z],
+	}
+	_apply_event_visual(event)
+	_apply_event_pt(event)
+	GameState.record(event)
+	print("[game] pose %s" % dev_name)
+
+
+# --- Callbacks UI -------------------------------------------------------------
+
+func _on_bridge_status_changed(state: String, message: String) -> void:
+	_status_label.text = "[Pont] %s" % message
+	match state:
+		"connected":
+			_status_label.modulate = Color(0.4, 0.9, 0.4)
+			_replay_to_pt()
+		"error":
+			_status_label.modulate = Color(0.95, 0.3, 0.3)
+		_:
+			_status_label.modulate = Color(0.9, 0.8, 0.3)
+
+
+func _on_save_pressed() -> void:
+	if GameState.save():
+		_flash_feedback("Partie sauvegardee : %s" % GameState.save_name)
+	else:
+		_flash_feedback("Echec de la sauvegarde")
+
+
+func _on_quit_to_menu() -> void:
+	_player.set_active(true)  # remet la souris en etat normal avant le menu
+	get_tree().change_scene_to_file(MENU_SCENE)
+
+
+func _flash_feedback(text: String) -> void:
+	_feedback_label.text = text
+	var timer := get_tree().create_timer(2.5)
+	timer.timeout.connect(func(): _feedback_label.text = "")

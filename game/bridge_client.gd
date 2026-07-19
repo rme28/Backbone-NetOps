@@ -97,8 +97,16 @@ func _spawn_bridge() -> void:
 	_bridge_pid = pid
 
 
-func add_device(name: String, model: String, x: int, y: int) -> void:
-	_post_command({"action": "addDevice", "name": name, "model": model, "x": x, "y": y})
+## Vide la topologie Packet Tracer (avant de rejouer une sauvegarde ou pour une
+## nouvelle partie). TODO : investigation empirique cote PT (commande "new" via
+## IPC, ou suppression des equipements un a un). Pour l'instant no-op : PT doit
+## etre vide a la main (File > New) avant de charger une partie.
+func clear_topology() -> void:
+	push_warning("[bridge] clear_topology() pas encore implemente - vider PT a la main (File > New) avant de charger")
+
+
+func add_device(device_name: String, model: String, x: int, y: int) -> void:
+	_post_command({"action": "addDevice", "name": device_name, "model": model, "x": x, "y": y})
 
 
 func add_link(dev1: String, iface1: String, dev2: String, iface2: String, cable := "straight") -> void:
@@ -110,8 +118,8 @@ func add_link(dev1: String, iface1: String, dev2: String, iface2: String, cable 
 	})
 
 
-func configure_ios(name: String, commands: Array) -> void:
-	_post_command({"action": "configureIos", "name": name, "commands": commands})
+func configure_ios(device_name: String, commands: Array) -> void:
+	_post_command({"action": "configureIos", "name": device_name, "commands": commands})
 
 
 func get_devices() -> void:

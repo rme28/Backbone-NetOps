@@ -1,5 +1,7 @@
 extends CharacterBody3D
-## Contrôleur FPS : déplacement ZQSD (physique, indépendant du clavier) + vue souris.
+## Controleur FPS : deplacement ZQSD (physique, independant du clavier) + vue souris.
+## L'etat actif (souris capturee + entrees) est pilote par main.gd via set_active()
+## pour le menu pause.
 
 const SPEED := 5.0
 const MOUSE_SENS := 0.0025
@@ -13,15 +15,18 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
+## Active/desactive le joueur (mouvement, vue souris, capture du curseur).
+func set_active(active: bool) -> void:
+	set_physics_process(active)
+	set_process_unhandled_input(active)
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if active else Input.MOUSE_MODE_VISIBLE
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		rotate_y(-event.relative.x * MOUSE_SENS)
 		camera.rotate_x(-event.relative.y * MOUSE_SENS)
 		camera.rotation.x = clamp(camera.rotation.x, -1.4, 1.4)
-	elif event.is_action_pressed("ui_cancel"):
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	elif event is InputEventMouseButton and event.pressed:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 func _physics_process(delta: float) -> void:

@@ -8,7 +8,19 @@ versions selon [SemVer](https://semver.org/lang/fr/) avec canal de pré-version
 
 ## [Non publié]
 
-_Rien pour l'instant._
+### Ajouté
+- **Auto-lancement du pont** : le jeu detecte le pont au demarrage et le lance
+  automatiquement s'il est absent, avec un statut visible en jeu (connecte / erreur).
+- **Menu principal** : nouvelle partie, charger une partie, supprimer une sauvegarde.
+- **Systeme de sauvegarde par rejeu** (event sourcing) : chaque action est
+  journalisee ; sauvegarder ecrit le journal, charger le rejoue dans un PT vide.
+  Le jeu est la seule source de verite (ne depend d'aucune sauvegarde de PT).
+- **Menu pause** (Echap) : reprendre, sauvegarder, retour au menu principal.
+
+### A faire
+- Commande "vider PT" (investigation empirique cote PTBuilder) pour que "nouvelle
+  partie" et le rejeu partent d'un PT reellement vide. Pour l'instant : vider PT
+  a la main (File > New) avant de charger une partie.
 
 ## [0.1.0-alpha] - 2026-07-19
 
