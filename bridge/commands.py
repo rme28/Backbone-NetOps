@@ -57,6 +57,21 @@ def build_action_code(cmd):
             "result=byCat;"
         )
 
+    if action == "cliSend":
+        # Tape une commande dans le vrai CLI de l'equipement (comme un humain le ferait).
+        # Voir README.md "Real interactive CLI access" pour le detail de getCommandLine().
+        return "ipc.network().getDevice({name}).getCommandLine().enterCommand({cmd}); result=true;".format(
+            name=js_string(cmd["name"]), cmd=js_string(cmd["command"]),
+        )
+
+    if action == "cliRead":
+        # Lit l'etat courant du CLI (transcript complet + prompt), pour affichage
+        # dans le terminal en jeu et pour detecter un resultat (ex: ping).
+        return (
+            "var cl=ipc.network().getDevice({name}).getCommandLine();"
+            "result={{output:cl.getOutput(),prompt:cl.getPrompt()}};"
+        ).format(name=js_string(cmd["name"]))
+
     if action == "clearTopology":
         # Vide le canvas PT (équivalent File > New). L'argument false = ne pas
         # demander de sauvegarder. Validé empiriquement sur PT 9.0.0.

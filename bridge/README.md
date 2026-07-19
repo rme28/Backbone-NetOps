@@ -151,3 +151,24 @@ for the response.
 Caveat: commands take real (simulated) time to resolve - e.g. a 5-packet ping
 takes several seconds before `getOutput()` reflects the final result. Poll
 with a delay rather than reading immediately after sending a command.
+
+**Client-side warning**: if you poll `cliRead` on a fixed timer, guard against
+overlapping requests (skip the tick if the previous one hasn't returned yet).
+PT only serves one job per `/next` poll (~500ms), so an unbounded polling loop
+queues faster than PT can drain it and the displayed output falls further and
+further behind in real time. See `game/scripts/world/server_room.gd`
+(`_terminal_refresh_in_flight`) for the fix.
+
+## `fileSaveToBytes()` exists but is too slow to use
+
+`ipc.appWindow().fileSaveToBytes()` returns the current `.pkt` as a byte array
+- in principle a way to save/load the *real* Packet Tracer file instead of
+replaying the game's event journal. In practice: converting a 45KB result
+(topology with a single device) to base64 took **23 real seconds**, and the
+naive approach (`Base64.encode(bytesArray)`) doesn't even work correctly - it
+stringifies the array element-by-element (`"110,-80,81,..."`) instead of
+encoding raw bytes. The sandboxed JS engine appears to have very high overhead
+per array element access (likely crossing a native/IPC boundary each time).
+A real save with several devices and configs would likely take minutes.
+**Not used** - the game sticks with event-sourcing/replay for saves
+(`game/scripts/core/game_state.gd`).

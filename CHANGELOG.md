@@ -29,8 +29,36 @@ versions follow [SemVer](https://semver.org/) with a pre-release channel
 - **Discovered real interactive CLI access** via `getCommandLine()` on a PT
   device object (`enterCommand`, `getOutput`, `getPrompt`): full read/write
   access to the actual device terminal, including parseable `ping` results
-  (`Success rate is X percent`). See `bridge/README.md`. Not wired into the
-  game yet - unlocks a real in-game IOS terminal and ping-based objectives.
+  (`Success rate is X percent`). See `bridge/README.md`.
+- **In-game device console**: aim at a device and press `T` to open a real
+  terminal wired to its actual Packet Tracer CLI (`cliSend`/`cliRead` bridge
+  actions). Commands typed in-game are genuinely executed by PT - no fake
+  terminal, real IOS output, real errors, real `ping` results.
+
+### Fixed
+- **Console commands now persist across save/load**: every command typed in
+  the in-game terminal is journaled (`cli_command` events) and replayed on
+  load, with a boot delay before a device's first command so `no`/`enable`
+  aren't sent before the device is ready. Previously, devices and links
+  survived a reload but their configuration didn't.
+- The console input field could lose keyboard focus (most noticeably on Tab,
+  which triggered Godot's default UI focus navigation instead of typing a
+  character) - focus is now pinned to the input field.
+- Pressing Enter with an empty line now sends an actual blank command (needed
+  to page through `--More--` output, e.g. `show running-config`), instead of
+  being silently ignored.
+- **Growing console latency**: the auto-refresh timer queued a new read every
+  0.5s even if the previous one hadn't returned, and PT only serves one job
+  per poll (~500ms) - the backlog grew unbounded and output appeared later
+  and later. Fixed with an in-flight guard that skips a tick if a request is
+  still pending.
+
+### Investigated
+- Whether the game could save/load the *real* `.pkt` file (via
+  `fileSaveToBytes`/`fileOpenFromBytes`) instead of replaying the event
+  journal. Technically callable, but converting a 45KB result to base64 took
+  23 real seconds in PT's sandboxed engine - not usable. See `bridge/README.md`.
+  Sticking with event-sourcing for saves.
 
 ### Changed
 - **Project restructuring** for scalability: `game/` is now organized into

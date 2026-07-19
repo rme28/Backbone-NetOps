@@ -124,8 +124,30 @@ func get_devices() -> void:
 	_post_command({"action": "getDevices"})
 
 
+## Tape une commande dans le vrai CLI de l'equipement (voir bridge/README.md
+## "Real interactive CLI access"). on_result(status, data) est appele quand
+## la commande a ete transmise (data=true), pas quand elle a fini de s'executer
+## dans PT (un ping prend plusieurs secondes) - relire via cli_read() ensuite.
+## delay_before (secondes) : utile au rejeu d'une sauvegarde, pour laisser un
+## equipement fraichement recree finir de booter avant sa premiere commande.
+func cli_send(device_name: String, command: String, on_result: Callable = Callable(), delay_before: float = 0.0) -> void:
+	var cmd := {"action": "cliSend", "name": device_name, "command": command}
+	if delay_before > 0.0:
+		cmd["delay_before"] = delay_before
+	_post_command(cmd, on_result)
+
+
+## Lit l'etat courant du CLI d'un equipement. on_result(status, data) recoit
+## data = {"output": <transcript complet>, "prompt": <prompt courant>}.
+func cli_read(device_name: String, on_result: Callable) -> void:
+	_post_command({"action": "cliRead", "name": device_name}, on_result)
+
+
 ## Depose une commande sur le pont et suit son resultat via /result/<job_id>.
-func _post_command(cmd: Dictionary) -> void:
+## on_result(status, data), si fourni, est appele en plus du signal command_result
+## (utile pour des appelants qui doivent distinguer leurs propres requetes,
+## comme le terminal en jeu qui peut interroger plusieurs equipements).
+func _post_command(cmd: Dictionary, on_result: Callable = Callable()) -> void:
 	if not _connected:
 		push_warning("[bridge] commande ignoree, pont non connecte : %s" % cmd.get("action", "?"))
 		return
@@ -140,8 +162,7 @@ func _post_command(cmd: Dictionary) -> void:
 		if typeof(parsed) == TYPE_DICTIONARY and (parsed as Dictionary).has("job_id"):
 			var resp := parsed as Dictionary
 			var job_id := resp["job_id"] as String
-			print("[bridge] job depose : %s (%s)" % [job_id, cmd.get("action", "?")])
-			_poll_result(job_id)
+			_poll_result(job_id, 0, on_result)
 		else:
 			push_error("[bridge] reponse inattendue du pont : %s" % body.get_string_from_utf8())
 	)
@@ -157,7 +178,7 @@ func _post_command(cmd: Dictionary) -> void:
 
 
 ## Interroge /result/<job_id> jusqu'a obtenir ok/error (max ~10s).
-func _poll_result(job_id: String, tries := 0) -> void:
+func _poll_result(job_id: String, tries := 0, on_result: Callable = Callable()) -> void:
 	if tries > 40:
 		push_warning("[bridge] pas de resultat pour le job %s (timeout)" % job_id)
 		return
@@ -174,10 +195,11 @@ func _poll_result(job_id: String, tries := 0) -> void:
 		var status := resp.get("status", "pending") as String
 		if status == "pending":
 			await get_tree().create_timer(0.25).timeout
-			_poll_result(job_id, tries + 1)
+			_poll_result(job_id, tries + 1, on_result)
 		else:
 			var data: Variant = resp.get("result", resp.get("error", null))
-			print("[bridge] job %s -> %s" % [job_id, status])
 			command_result.emit(job_id, status, data)
+			if on_result.is_valid():
+				on_result.call(status, data)
 	)
 	http.request(BRIDGE + "/result/" + job_id, [], HTTPClient.METHOD_GET)

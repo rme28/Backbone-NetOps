@@ -7,6 +7,7 @@ extends Node3D
 
 const MENU_SCENE := "res://scenes/ui/menu.tscn"
 const CABLE_MAX_DISTANCE := 8.0
+const TERMINAL_AUTO_REFRESH := 0.5
 
 var _paused := false
 var _pt_replayed := false
@@ -29,6 +30,17 @@ var _device_categories: Dictionary = {}   # device_name -> category
 var _device_positions: Dictionary = {}    # device_name -> Vector3
 var _used_interfaces: Dictionary = {}     # device_name -> Array[String]
 var _cable_start: String = ""
+var _replay_cli_booted: Dictionary = {}   # device_name -> bool (delai de boot deja applique au rejeu)
+
+# --- Terminal (console reelle de l'equipement, via getCommandLine cote PT) -----
+var _terminal_layer: CanvasLayer
+var _terminal_open := false
+var _terminal_device := ""
+var _terminal_title: Label
+var _terminal_output: RichTextLabel
+var _terminal_input: LineEdit
+var _terminal_refresh_accum := 0.0
+var _terminal_refresh_in_flight := false
 
 
 func _ready() -> void:
@@ -38,6 +50,7 @@ func _ready() -> void:
 	_build_room()
 	_build_ui()
 	_build_palette()
+	_build_terminal()
 	_build_objectives_panel()
 	_build_pause_menu()
 
@@ -129,8 +142,8 @@ func _update_help_text() -> void:
 	if not _catalog.is_empty():
 		selected = _catalog[_selected_index]["label"]
 	_help_label.text = (
-		"ZQSD : deplacer    Souris : regarder    Tab : choisir materiel (%s)    "
-		+ "E : poser    Clic gauche : cabler    Echap : pause"
+		"ZQSD : deplacer    Souris : regarder    Tab : materiel (%s)    E : poser    "
+		+ "Clic gauche : cabler    T : console    Echap : pause"
 	) % selected
 
 
@@ -159,6 +172,61 @@ func _build_palette() -> void:
 		var row := Label.new()
 		row.text = "%d - %s" % [i + 1, _catalog[i]["label"]]
 		vbox.add_child(row)
+
+
+## Console interactive branchee sur le vrai CLI de l'equipement dans PT (voir
+## Bridge.cli_send/cli_read). Ce n'est pas un faux terminal : les commandes
+## tapees ici sont reellement executees par Packet Tracer.
+func _build_terminal() -> void:
+	_terminal_layer = CanvasLayer.new()
+	_terminal_layer.visible = false
+	add_child(_terminal_layer)
+
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.75)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_terminal_layer.add_child(dim)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_terminal_layer.add_child(center)
+
+	var vbox := VBoxContainer.new()
+	vbox.custom_minimum_size = Vector2(760, 0)
+	vbox.add_theme_constant_override("separation", 6)
+	center.add_child(vbox)
+
+	_terminal_title = Label.new()
+	_terminal_title.add_theme_font_size_override("font_size", 18)
+	vbox.add_child(_terminal_title)
+
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(760, 420)
+	vbox.add_child(panel)
+
+	_terminal_output = RichTextLabel.new()
+	_terminal_output.custom_minimum_size = Vector2(740, 400)
+	_terminal_output.scroll_following = true
+	_terminal_output.bbcode_enabled = false
+	_terminal_output.add_theme_font_size_override("normal_font_size", 14)
+	panel.add_child(_terminal_output)
+
+	_terminal_input = LineEdit.new()
+	_terminal_input.placeholder_text = "Tape une commande IOS et appuie sur Entree..."
+	_terminal_input.text_submitted.connect(_on_terminal_command_submitted)
+	# Empeche Tab de faire fuir le focus vers un autre controle de l'UI (comportement
+	# de navigation par defaut de Godot) : pas d'autocompletion IOS disponible via
+	# l'API PT (enterChar rejette tous les arguments testes), mais au moins le champ
+	# garde le focus.
+	_terminal_input.focus_mode = Control.FOCUS_ALL
+	vbox.add_child(_terminal_input)
+	_terminal_input.focus_next = _terminal_input.get_path()
+	_terminal_input.focus_previous = _terminal_input.get_path()
+
+	var hint := Label.new()
+	hint.text = "Echap : fermer la console"
+	hint.modulate = Color(0.7, 0.7, 0.7)
+	vbox.add_child(hint)
 
 
 func _build_objectives_panel() -> void:
@@ -301,6 +369,16 @@ func _apply_event_pt(event: Dictionary) -> void:
 				event.get("dev2", ""), event.get("iface2", ""),
 				event.get("cable", "straight"),
 			)
+		"cli_command":
+			var cli_device: String = event.get("name", "")
+			# Laisse le temps a un equipement fraichement recree de booter avant
+			# sa premiere commande rejouee (sinon "no"/"enable" arrivent trop tot
+			# et sont perdus). Une seule fois par equipement.
+			var delay := 0.0
+			if not _replay_cli_booted.get(cli_device, false):
+				_replay_cli_booted[cli_device] = true
+				delay = 6.0
+			Bridge.cli_send(cli_device, event.get("command", ""), Callable(), delay)
 
 
 func _mark_interface_used(device_name: String, iface: String) -> void:
@@ -360,18 +438,27 @@ func _draw_cable(a: Vector3, b: Vector3) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
-		if _palette_open:
+		if _terminal_open:
+			_close_terminal()
+		elif _palette_open:
 			_close_palette()
 		else:
 			_toggle_pause()
 		return
 
-	if _paused:
+	if _paused or _terminal_open:
 		return
 
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_TAB:
 			_toggle_palette()
+			return
+		if event.keycode == KEY_T:
+			var target := _raycast_device_name()
+			if target.is_empty():
+				_flash_feedback("Vise un equipement pour ouvrir sa console")
+			else:
+				_open_terminal(target)
 			return
 		if _palette_open and event.keycode >= KEY_1 and event.keycode <= KEY_9:
 			var idx: int = event.keycode - KEY_1
@@ -390,6 +477,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		_handle_cable_click()
 
 
+func _process(delta: float) -> void:
+	if not _terminal_open:
+		return
+	_terminal_refresh_accum += delta
+	if _terminal_refresh_accum >= TERMINAL_AUTO_REFRESH:
+		_terminal_refresh_accum = 0.0
+		_refresh_terminal()
+
+
 func _toggle_pause() -> void:
 	_paused = not _paused
 	_pause_menu.visible = _paused
@@ -404,6 +500,60 @@ func _toggle_palette() -> void:
 func _close_palette() -> void:
 	_palette_open = false
 	_palette_layer.visible = false
+
+
+func _open_terminal(device_name: String) -> void:
+	_terminal_device = device_name
+	_terminal_open = true
+	_terminal_refresh_accum = 0.0
+	_terminal_layer.visible = true
+	_terminal_title.text = "Console : %s" % device_name
+	_terminal_output.text = ""
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_player.set_active(false)
+	_terminal_input.grab_focus()
+	_refresh_terminal()
+
+
+func _close_terminal() -> void:
+	_terminal_open = false
+	_terminal_layer.visible = false
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_player.set_active(true)
+
+
+func _on_terminal_command_submitted(text: String) -> void:
+	# On envoie meme une ligne vide : appuyer sur Entree tout court fait avancer
+	# la pagination "--More--" (ex: show running-config), comme sur un vrai CLI.
+	_terminal_input.text = ""
+	var device := _terminal_device
+	Bridge.cli_send(device, text, func(_status, _data): _refresh_terminal())
+	GameState.record({"type": "cli_command", "name": device, "command": text})
+	# call_deferred : grab_focus() immediat ne "tenait" pas toujours apres un submit.
+	_terminal_input.call_deferred("grab_focus")
+
+
+func _refresh_terminal() -> void:
+	if not _terminal_open:
+		return
+	# Verrou anti-chevauchement : sans ca, chaque tick de 0.5s empile une nouvelle
+	# requete meme si la precedente n'est pas revenue. Comme PT ne traite qu'un
+	# job a la fois (poll ~500ms), la file grossit sans limite et le terminal
+	# affiche les resultats avec un retard croissant.
+	if _terminal_refresh_in_flight:
+		return
+	_terminal_refresh_in_flight = true
+	var device := _terminal_device
+	Bridge.cli_read(device, func(status, data):
+		_terminal_refresh_in_flight = false
+		if not _terminal_open or device != _terminal_device:
+			return
+		if status == "ok" and typeof(data) == TYPE_DICTIONARY:
+			var d := data as Dictionary
+			_terminal_output.text = str(d.get("output", ""))
+		if not _terminal_input.has_focus():
+			_terminal_input.call_deferred("grab_focus")
+	)
 
 
 func _place_device() -> void:
