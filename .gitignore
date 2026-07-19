@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+bridge/server.log
+
+# Godot (à venir)
+.godot/
+export.cfg
+*.tmp
+
+# OS
+Thumbs.db
+.DS_Store
