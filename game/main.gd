@@ -1,17 +1,18 @@
 extends Node3D
-## Construit la salle 3D par code (aucune manip souris nécessaire) et gère
-## l'interaction : appuyer sur E pose un routeur - un cube apparaît dans le jeu
-## ET l'équipement apparaît dans Packet Tracer via le pont Python.
+## Construit la salle 3D par code (aucune manip souris necessaire) et gere
+## l'interaction : appuyer sur E pose un routeur - un cube apparait dans le jeu
+## ET l'equipement apparait dans Packet Tracer via le pont Python.
 
 var device_count := 0
+var _status_label: Label
 
 
 func _ready() -> void:
 	_build_environment()
 	_build_room()
 	_build_ui()
-	# Vérifie que le pont répond au démarrage (log console).
-	Bridge.ping()
+	Bridge.status_changed.connect(_on_bridge_status_changed)
+	Bridge.ensure_running()
 
 
 func _build_environment() -> void:
@@ -64,11 +65,28 @@ func _add_box(pos: Vector3, size: Vector3, mat: Material) -> void:
 
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
-	var label := Label.new()
-	label.text = "ZQSD : se déplacer    Souris : regarder    E : poser un routeur    Échap : libérer la souris"
-	label.position = Vector2(16, 12)
-	layer.add_child(label)
+
+	var help := Label.new()
+	help.text = "ZQSD : se deplacer    Souris : regarder    E : poser un routeur    Echap : liberer la souris"
+	help.position = Vector2(16, 12)
+	layer.add_child(help)
+
+	_status_label = Label.new()
+	_status_label.position = Vector2(16, 40)
+	layer.add_child(_status_label)
+
 	add_child(layer)
+
+
+func _on_bridge_status_changed(state: String, message: String) -> void:
+	_status_label.text = "[Pont] %s" % message
+	match state:
+		"connected":
+			_status_label.modulate = Color(0.4, 0.9, 0.4)
+		"error":
+			_status_label.modulate = Color(0.95, 0.3, 0.3)
+		_:
+			_status_label.modulate = Color(0.9, 0.8, 0.3)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -96,6 +114,6 @@ func _place_device() -> void:
 	add_child(box)
 	box.global_position = pos
 
-	# Envoi au pont -> l'équipement apparaît dans Packet Tracer.
+	# Envoi au pont -> l'equipement apparait dans Packet Tracer.
 	Bridge.add_device(dev_name, "2911", 100 + device_count * 60, 100)
-	print("Posé %s à %s" % [dev_name, pos])
+	print("Pose %s a %s" % [dev_name, pos])
