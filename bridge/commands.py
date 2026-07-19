@@ -42,6 +42,21 @@ def build_action_code(cmd):
     if action == "getDevices":
         return "result = getDevices();"
 
+    if action == "getDeviceCatalog":
+        # Catalogue complet des modeles PT, groupes par categorie : {"router": ["2911", ...], ...}.
+        # Calcule a la volee depuis les objets globaux deviceTypes (categorie -> id) et
+        # allDeviceTypes (modele -> id de categorie), plutot que maintenu a la main cote jeu.
+        return (
+            "var idToName={};for(var k in deviceTypes){idToName[deviceTypes[k]]=k;}"
+            "var byCat={};"
+            "for(var model in allDeviceTypes){"
+            "var cat=idToName[allDeviceTypes[model]]||String(allDeviceTypes[model]);"
+            "if(!byCat[cat])byCat[cat]=[];"
+            "byCat[cat].push(model);"
+            "}"
+            "result=byCat;"
+        )
+
     if action == "clearTopology":
         # Vide le canvas PT (équivalent File > New). L'argument false = ne pas
         # demander de sauvegarder. Validé empiriquement sur PT 9.0.0.

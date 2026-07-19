@@ -1,0 +1,5 @@
+[
+	{"id": "router", "label": "Routeur (Cisco 2911)", "pt_model": "2911"},
+	{"id": "switch", "label": "Switch (Cisco 2960-24TT)", "pt_model": "2960-24TT"},
+	{"id": "pc", "label": "PC", "pt_model": "PC-PT"}
+]

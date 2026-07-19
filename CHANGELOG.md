@@ -13,6 +13,19 @@ versions follow [SemVer](https://semver.org/) with a pre-release channel
   (`game/scripts/missions/objectives.gd`), evaluated reactively against the
   game's event journal. Score and completed objectives are part of the save.
   An in-game panel shows the score and the objective checklist live.
+- **Equipment palette**: press Tab to pick what to place (router, switch, PC),
+  driven by a data file (`game/resources/equipment/devices.json`) so new
+  hardware can be added without touching game logic.
+- **Mouse-based cabling**: aim at a device and left-click, aim at a second one
+  and left-click again to connect them. The game auto-picks the first free
+  interface on each side (`game/scripts/network/interfaces.gd`) and draws a
+  simple cable between the two devices. Links are journaled and replayed like
+  device placement.
+- **`getDeviceCatalog` bridge action**: returns Packet Tracer's full live device
+  catalog (151 models across 39 categories), read directly from PT's internal
+  `deviceTypes`/`allDeviceTypes` objects. Not wired into the game palette yet
+  (still using the static JSON) - groundwork for a richer, auto-updating
+  equipment palette.
 
 ### Changed
 - **Project restructuring** for scalability: `game/` is now organized into

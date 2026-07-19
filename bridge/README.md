@@ -95,5 +95,22 @@ more of Packet Tracer's internal API. Notably:
 - `ipc.network()` exposes `getDeviceCount`, `getDevice`, `getDeviceAt`,
   `getLinkCount`, but no per-device removal - hence using `fileNew` to reset.
 
+Also discovered outside `ipc`, two more global objects give the **full live
+device catalog** straight from PT (no need to hand-maintain a model list):
+
+- `deviceTypes`: category name -> category id (39 entries: router, switch, pc,
+  server, accesspoint, printer, ipphone, etc.)
+- `allDeviceTypes`: model string -> category id (151 entries, e.g.
+  `"2911"` -> router, `"2960-24TT"` -> switch, `"PC-PT"` -> pc)
+
+Exposed via the `getDeviceCatalog` action (`commands.py`), which cross-references
+both objects and returns `{category: [model, ...]}`. Verified accurate for the
+categories actually used in the game (router, switch, pc, server, accesspoint,
+printer). **Caveat**: `deviceTypes` only maps ids 0-38, but `allDeviceTypes`
+references ids beyond that range (39+) for rarer/newer categories (IoT sensors,
+patch panels, wireless controllers...) - for those, the category name falls back
+to the raw numeric id and the grouping can look inconsistent. Not an issue for
+the models this game actually uses, but don't trust the exotic categories blindly.
+
 Discovery method: submit a `"raw"` action with JS that enumerates
 `Object.getOwnPropertyNames(ipc)` (and sub-objects) and inspect the result.
