@@ -10,7 +10,7 @@ versions selon [SemVer](https://semver.org/lang/fr/) avec canal de pré-version
 
 _Rien pour l'instant._
 
-## [0.1.0-alpha] — 2026-07-19
+## [0.1.0-alpha] - 2026-07-19
 
 Première tranche verticale jouable : marcher dans une salle 3D → poser un
 équipement → le voir apparaître dans le vrai moteur Cisco Packet Tracer.

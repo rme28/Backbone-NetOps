@@ -1,4 +1,4 @@
-# Pont Python — Jeu Godot ↔ Packet Tracer (PTBuilder)
+# Pont Python - Jeu Godot ↔ Packet Tracer (PTBuilder)
 
 Boîte aux lettres HTTP sur `127.0.0.1:8081`. Voir `CLAUDE.md` section 3-4 pour le
 protocole complet.
@@ -13,12 +13,12 @@ python server.py
 
 ## Endpoints
 
-- `POST /command` — le jeu dépose une commande de haut niveau, reçoit `{"job_id": "..."}`.
-- `GET /result/<job_id>` — le jeu lit le résultat : `{"status":"pending"}` /
+- `POST /command` - le jeu dépose une commande de haut niveau, reçoit `{"job_id": "..."}`.
+- `GET /result/<job_id>` - le jeu lit le résultat : `{"status":"pending"}` /
   `{"status":"ok","result":...}` / `{"status":"error","error":"..."}`.
-- `GET /next` — PTBuilder poll ici (toutes les 500ms) pour récupérer le prochain
+- `GET /next` - PTBuilder poll ici (toutes les 500ms) pour récupérer le prochain
   code JS à exécuter. Vide si rien à faire.
-- `POST /result` — PTBuilder y repose le résultat brut de l'exécution.
+- `POST /result` - PTBuilder y repose le résultat brut de l'exécution.
 
 ## Actions supportées par `POST /command`
 
@@ -33,7 +33,7 @@ python server.py
 
 Chaque commande accepte un champ optionnel `"delay_before": <secondes>` : le job
 reste en file sans être servi tant que ce délai n'est pas écoulé (utile pour
-laisser un équipement fraîchement posé finir de booter avant de le configurer —
+laisser un équipement fraîchement posé finir de booter avant de le configurer -
 voir CLAUDE.md 4.7).
 
 ## Tester seul avec curl (sans PT ni jeu)
@@ -72,4 +72,4 @@ section 4.6bis. Ne pas retirer ces en-têtes.
 ## Étape suivante
 
 Étape 2 du CLAUDE.md : valider la chaîne complète avec un vrai PT ouvert (poser
-2 routeurs, les câbler, les configurer, via curl uniquement — pas encore de jeu).
+2 routeurs, les câbler, les configurer, via curl uniquement - pas encore de jeu).

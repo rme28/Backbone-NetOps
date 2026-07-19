@@ -17,11 +17,11 @@ func ping() -> void:
 		if code == 200:
 			print("[bridge] pont joignable sur %s ✓" % BRIDGE)
 		else:
-			push_warning("[bridge] pont injoignable (code %d) — lance bridge/server.py" % code)
+			push_warning("[bridge] pont injoignable (code %d) - lance bridge/server.py" % code)
 	)
 	var err := http.request(BRIDGE + "/health", [], HTTPClient.METHOD_GET)
 	if err != OK:
-		push_warning("[bridge] impossible de contacter le pont — lance bridge/server.py")
+		push_warning("[bridge] impossible de contacter le pont - lance bridge/server.py")
 
 
 func add_device(name: String, model: String, x: int, y: int) -> void:
@@ -69,7 +69,7 @@ func _post_command(cmd: Dictionary) -> void:
 	)
 	if err != OK:
 		http.queue_free()
-		push_error("[bridge] request() a échoué (%d) — le pont tourne-t-il ?" % err)
+		push_error("[bridge] request() a échoué (%d) - le pont tourne-t-il ?" % err)
 
 
 ## Interroge /result/<job_id> jusqu'à obtenir ok/error (max ~10s).

@@ -1,6 +1,6 @@
 extends Node3D
 ## Construit la salle 3D par code (aucune manip souris nécessaire) et gère
-## l'interaction : appuyer sur E pose un routeur — un cube apparaît dans le jeu
+## l'interaction : appuyer sur E pose un routeur - un cube apparaît dans le jeu
 ## ET l'équipement apparaît dans Packet Tracer via le pont Python.
 
 var device_count := 0

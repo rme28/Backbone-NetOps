@@ -18,7 +18,7 @@ on chasse les bugs) → `rc` (release candidate) → version finale sans suffixe
 ## Étapes pour publier une release
 
 1. **Mettre à jour le CHANGELOG.md** : déplacer les entrées de `[Non publié]`
-   vers une nouvelle section `[X.Y.Z-canal] — AAAA-MM-JJ`, et mettre à jour les
+   vers une nouvelle section `[X.Y.Z-canal] - AAAA-MM-JJ`, et mettre à jour les
    deux liens en bas de fichier.
 2. **Commit** : `git commit -am "Release vX.Y.Z-canal"`.
 3. **Tag annoté** (le message devient le corps de la release) :

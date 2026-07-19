@@ -12,7 +12,7 @@ export.cfg
 Thumbs.db
 .DS_Store
 
-# Moteur Godot (binaire portable, ~100 Mo — le joueur l'installe lui-même)
+# Moteur Godot (binaire portable, ~100 Mo - le joueur l'installe lui-même)
 Godot/
 
 # Cache Godot
