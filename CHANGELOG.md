@@ -8,6 +8,14 @@ versions selon [SemVer](https://semver.org/lang/fr/) avec canal de pré-version
 
 ## [Non publié]
 
+_Rien pour l'instant._
+
+## [0.2.0-alpha] - 2026-07-19
+
+Système de save complet et confort technique : le jeu tourne quasi tout seul
+(auto-lancement du pont) et une partie peut être sauvegardée, quittée et
+rechargée avec Packet Tracer qui reflète exactement l'état chargé.
+
 ### Ajouté
 - **Auto-lancement du pont** : le jeu detecte le pont au demarrage et le lance
   automatiquement s'il est absent, avec un statut visible en jeu (connecte / erreur).
@@ -48,5 +56,6 @@ Première tranche verticale jouable : marcher dans une salle 3D → poser un
   IP + `no shutdown` appliqués), `getDevices`.
 - Chaîne complète depuis le jeu : les routeurs posés en 3D apparaissent dans PT.
 
-[Non publié]: https://github.com/rme28/Backbone-NetOps/compare/v0.1.0-alpha...HEAD
+[Non publié]: https://github.com/rme28/Backbone-NetOps/compare/v0.2.0-alpha...HEAD
+[0.2.0-alpha]: https://github.com/rme28/Backbone-NetOps/compare/v0.1.0-alpha...v0.2.0-alpha
 [0.1.0-alpha]: https://github.com/rme28/Backbone-NetOps/releases/tag/v0.1.0-alpha
