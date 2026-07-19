@@ -12,6 +12,10 @@ export.cfg
 Thumbs.db
 .DS_Store
 
+# Brief interne / config Claude Code (usage perso, pas destiné au repo public)
+CLAUDE.md
+.claude/
+
 # Moteur Godot (binaire portable, ~100 Mo - le joueur l'installe lui-même)
 Godot/
 
