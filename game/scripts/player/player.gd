@@ -4,7 +4,6 @@ extends CharacterBody3D
 ## pour le menu pause.
 
 const SPEED := 5.0
-const MOUSE_SENS := 0.0025
 
 @onready var camera: Camera3D = $Camera3D
 
@@ -24,8 +23,9 @@ func set_active(active: bool) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		rotate_y(-event.relative.x * MOUSE_SENS)
-		camera.rotate_x(-event.relative.y * MOUSE_SENS)
+		var sensitivity := 0.00005 * float(GameState.settings.get("mouse_sensitivity", 50.0))
+		rotate_y(-event.relative.x * sensitivity)
+		camera.rotate_x(-event.relative.y * sensitivity)
 		camera.rotation.x = clamp(camera.rotation.x, -1.4, 1.4)
 
 

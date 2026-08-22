@@ -3,7 +3,7 @@ extends Node
 ##
 ## Les objectifs sont verifies sur la source de verite du jeu : le journal
 ## d'evenements de GameState. Verification reactive (a chaque evenement
-## enregistre), pas besoin d'interroger Packet Tracer pour ce socle.
+## enregistre), sans interroger le moteur pour ce socle.
 ## L'etat (objectifs accomplis, score) vit dans GameState et est donc
 ## sauvegarde/recharge avec la partie.
 
@@ -21,22 +21,25 @@ var catalog: Array[Dictionary] = [
 		"id": "place_first_router",
 		"title": "Poser ton premier routeur",
 		"points": 10,
+		"bcoins": 25,
 		"check": func(events: Array) -> bool:
-			return _count_events(events, "place_device") >= 1,
+			return _count_devices(events, "router") >= 1,
 	},
 	{
 		"id": "place_three_routers",
 		"title": "Poser 3 routeurs",
 		"points": 20,
+		"bcoins": 75,
 		"check": func(events: Array) -> bool:
-			return _count_events(events, "place_device") >= 3,
+			return _count_devices(events, "router") >= 3,
 	},
 	{
 		"id": "place_five_routers",
 		"title": "Poser 5 routeurs",
 		"points": 30,
+		"bcoins": 150,
 		"check": func(events: Array) -> bool:
-			return _count_events(events, "place_device") >= 5,
+			return _count_devices(events, "router") >= 5,
 	},
 ]
 
@@ -62,6 +65,7 @@ func get_display_list() -> Array[Dictionary]:
 			"id": obj["id"],
 			"title": obj["title"],
 			"points": obj["points"],
+			"bcoins": obj.get("bcoins", 0),
 			"done": is_completed(obj["id"]),
 		})
 	return out
@@ -77,6 +81,7 @@ func evaluate() -> void:
 		if check.call(GameState.events):
 			GameState.completed_objectives.append(obj["id"])
 			GameState.score += obj["points"]
+			GameState.bcoins += int(obj.get("bcoins", 0))
 			newly_completed = true
 			objective_completed.emit(obj)
 			print("[objectifs] accompli : %s (+%d pts, score=%d)" % [obj["title"], obj["points"], GameState.score])
@@ -92,5 +97,13 @@ static func _count_events(events: Array, type: String) -> int:
 	var n := 0
 	for e in events:
 		if e.get("type", "") == type:
+			n += 1
+	return n
+
+
+static func _count_devices(events: Array, category: String) -> int:
+	var n := 0
+	for event in events:
+		if event.get("type", "") == "place_device" and event.get("category", "") == category:
 			n += 1
 	return n
