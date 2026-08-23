@@ -6,25 +6,27 @@ Backbone NetOps is a 3D first-person network simulation game built with Godot 4 
 
 The project runs locally without virtual machines, containers, paid services, or proprietary network software.
 
-## Current Status: Alpha 0.3.0
+## Current Status: Alpha 0.4.0
 
 The project is an early playable alpha. The current version includes:
 
-- A first-person 3D server room with lighting, raised flooring, work areas, and equipment carts
-- Distinct procedural models for routers, switches, access points, firewalls, computers, servers, and NAS devices
+- A first-person 3D server room with lighting, raised flooring, work areas, equipment carts, and a small break room annex
+- Distinct procedural models for routers, switches, access points, firewalls, computers, servers, and NAS devices, plus a 19 inch patch rack and a work table
 - Visible and selectable network interfaces
 - Port-to-port cabling with RJ45 and optical cable types
-- A categorized equipment inventory opened with Tab
+- Automatic racking: aim a placed patch rack and place compact network gear on it to mount it in the next free unit
+- A categorized equipment inventory opened with Tab, showing the selected item held in the player's view
 - Routers, L2 switches, multilayer switches, wireless routers, firewalls, and access points
-- Desktop computers, servers, NAS devices, and a unique technician laptop
+- Desktop computers, servers, NAS devices, a client laptop, and a unique technician laptop
 - An interactive network command line with command history, shortcuts, contextual help, and Tab completion
 - Per-device interface configuration, IP addressing, static routes, and administrative state
 - A local ns-3 simulation engine for links, switching, routing, and ICMP tests
 - Saved games based on a replayable event journal
 - Objectives, score, optional rewards, and the B-Coin currency
 - A technician hub with mail, jobs, shop, dashboard, and settings sections
-- Redesigned main, pause, inventory, terminal, and settings interfaces
-- Audio, video, mouse sensitivity, and interface settings
+- A landing screen, redesigned main, pause, inventory, terminal, and settings interfaces
+- Audio, video, mouse sensitivity, and interface settings that apply immediately and persist across sessions
+- A first set of CC0 3D assets (Kenney Furniture Kit and Space Kit) used for break room furniture and wireless equipment
 
 Some equipment, applications, and advanced network features are present as foundations and will be expanded in future releases.
 

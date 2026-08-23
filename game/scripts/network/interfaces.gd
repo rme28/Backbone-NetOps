@@ -15,6 +15,7 @@ const BY_CATEGORY := {
 	"nas": ["eth0", "eth1"],
 	"server": ["eth0", "eth1", "eth2", "eth3"],
 	"pc": ["eth0"],
+	"client_laptop": ["eth0"],
 }
 
 

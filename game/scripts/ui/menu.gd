@@ -1,119 +1,233 @@
 extends Control
 
 const GAME_SCENE := "res://scenes/world/server_room.tscn"
+
+const ACCENT := Color("7dd8ff")
+const ACCENT_DIM := Color("2e637e")
+const BG_PANEL := Color(0.045, 0.09, 0.12, 0.95)
+
 var _name_edit: LineEdit
 var _saves_list: ItemList
 var _feedback: Label
 var _settings: SettingsPanel
+var _landing_view: Control
+var _mission_view: Control
 
 func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	var bg := ColorRect.new()
-	bg.color = Color("071118")
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
-	# Bandes décoratives rappelant une baie réseau.
-	for index in 8:
-		var line := ColorRect.new()
-		line.color = Color(0.08, 0.20, 0.27, 0.22)
-		line.position = Vector2(0, 90 + index * 105)
-		line.size = Vector2(2200, 1)
-		add_child(line)
+	_build_background()
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 75)
-	margin.add_theme_constant_override("margin_right", 75)
-	margin.add_theme_constant_override("margin_top", 55)
-	margin.add_theme_constant_override("margin_bottom", 55)
+	margin.add_theme_constant_override("margin_left", 90)
+	margin.add_theme_constant_override("margin_right", 90)
+	margin.add_theme_constant_override("margin_top", 60)
+	margin.add_theme_constant_override("margin_bottom", 50)
 	add_child(margin)
 	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", 22)
+	root.add_theme_constant_override("separation", 26)
 	margin.add_child(root)
-	var top := HBoxContainer.new()
-	root.add_child(top)
-	var brand := VBoxContainer.new()
-	brand.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	top.add_child(brand)
-	var title := Label.new()
-	title.text = "BACKBONE\nNETOPS"
-	title.add_theme_font_size_override("font_size", 46)
-	title.add_theme_color_override("font_color", Color("e6f7ff"))
-	brand.add_child(title)
-	var subtitle := Label.new()
-	subtitle.text = "BUILD  •  CONFIGURE  •  TROUBLESHOOT"
-	subtitle.add_theme_color_override("font_color", Color("63c8f5"))
-	brand.add_child(subtitle)
-	var version := Label.new()
-	version.text = "ALPHA 0.3.0  /  ns-3 ENGINE"
-	version.add_theme_color_override("font_color", Color("607987"))
-	top.add_child(version)
-	root.add_child(HSeparator.new())
+
+	root.add_child(_build_header())
+	root.add_child(_accent_separator())
+
+	var stack := Control.new()
+	stack.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	root.add_child(stack)
+
+	_landing_view = _build_landing_view()
+	_landing_view.set_anchors_preset(Control.PRESET_FULL_RECT)
+	stack.add_child(_landing_view)
+
+	_mission_view = _build_mission_view()
+	_mission_view.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_mission_view.visible = false
+	stack.add_child(_mission_view)
+
+	_refresh_saves()
+
+
+func _show_landing() -> void:
+	_landing_view.visible = true
+	_mission_view.visible = false
+
+
+func _show_mission_select() -> void:
+	_landing_view.visible = false
+	_mission_view.visible = true
+
+
+# --- Ecran d'accueil ---------------------------------------------------------
+
+func _build_landing_view() -> Control:
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var buttons := VBoxContainer.new()
+	buttons.custom_minimum_size = Vector2(420, 0)
+	buttons.add_theme_constant_override("separation", 14)
+	center.add_child(buttons)
+
+	var play := _primary_button("JOUER")
+	play.pressed.connect(_show_mission_select)
+	buttons.add_child(play)
+
+	var online := _disabled_button("JOUER EN LIGNE   (prochainement)")
+	buttons.add_child(online)
+
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 8)
+	buttons.add_child(spacer)
+
+	var settings := _secondary_button("⚙  PARAMÈTRES")
+	settings.pressed.connect(_open_settings)
+	buttons.add_child(settings)
+
+	var quit := _secondary_button("QUITTER", Color("ff8a80"))
+	quit.pressed.connect(func(): get_tree().quit())
+	buttons.add_child(quit)
+
+	return center
+
+
+# --- Ecran nouvelle mission / sauvegardes ------------------------------------
+
+func _build_mission_view() -> Control:
+	var root := VBoxContainer.new()
+	root.add_theme_constant_override("separation", 20)
+
+	var back := _secondary_button("◂  RETOUR")
+	back.custom_minimum_size = Vector2(140, 40)
+	back.pressed.connect(_show_landing)
+	root.add_child(back)
 
 	var columns := HBoxContainer.new()
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	columns.add_theme_constant_override("separation", 28)
+	columns.add_theme_constant_override("separation", 30)
 	root.add_child(columns)
-	var new_card := _card("NOUVELLE MISSION")
-	new_card.custom_minimum_size = Vector2(520, 0)
-	columns.add_child(new_card)
-	_name_edit = LineEdit.new()
-	_name_edit.placeholder_text = "Nom de la partie"
-	_name_edit.custom_minimum_size = Vector2(0, 48)
-	new_card.get_child(0).add_child(_name_edit)
-	var new_button := Button.new()
-	new_button.text = "DÉMARRER"
-	new_button.custom_minimum_size = Vector2(0, 58)
-	new_button.pressed.connect(_on_new_game)
-	new_card.get_child(0).add_child(new_button)
 
-	var load_card := _card("PARTIES SAUVEGARDÉES")
+	var new_card := _card("NOUVELLE MISSION", "▹")
+	new_card.custom_minimum_size = Vector2(500, 0)
+	columns.add_child(new_card)
+	var new_body := new_card.get_child(0)
+	var new_hint := Label.new()
+	new_hint.text = "Choisis un nom pour ta partie et démarre directement dans la salle serveur."
+	new_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	new_hint.add_theme_color_override("font_color", Color("8ba7b5"))
+	new_body.add_child(new_hint)
+	_name_edit = _styled_line_edit("Nom de la partie")
+	new_body.add_child(_name_edit)
+	var new_button := _primary_button("DÉMARRER")
+	new_button.pressed.connect(_on_new_game)
+	new_body.add_child(new_button)
+
+	var load_card := _card("PARTIES SAUVEGARDÉES", "▤")
 	load_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	columns.add_child(load_card)
-	_saves_list = ItemList.new()
+	var load_body := load_card.get_child(0)
+	_saves_list = _styled_item_list()
 	_saves_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_saves_list.custom_minimum_size = Vector2(0, 230)
 	_saves_list.item_activated.connect(_on_save_activated)
-	load_card.get_child(0).add_child(_saves_list)
+	load_body.add_child(_saves_list)
 	var load_row := HBoxContainer.new()
-	load_card.get_child(0).add_child(load_row)
-	var load := Button.new()
-	load.text = "CHARGER"
+	load_row.add_theme_constant_override("separation", 10)
+	load_body.add_child(load_row)
+	var load := _secondary_button("CHARGER")
 	load.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	load.pressed.connect(_on_load_selected)
 	load_row.add_child(load)
-	var delete := Button.new()
-	delete.text = "SUPPRIMER"
+	var delete := _secondary_button("SUPPRIMER", Color("ff8a80"))
+	delete.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	delete.pressed.connect(_on_delete_selected)
 	load_row.add_child(delete)
 
-	var bottom := HBoxContainer.new()
-	root.add_child(bottom)
-	var settings := Button.new()
-	settings.text = "PARAMÈTRES"
-	settings.pressed.connect(_open_settings)
-	bottom.add_child(settings)
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	bottom.add_child(spacer)
-	var quit := Button.new()
-	quit.text = "QUITTER"
-	quit.pressed.connect(func(): get_tree().quit())
-	bottom.add_child(quit)
 	_feedback = Label.new()
+	_feedback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_feedback.add_theme_color_override("font_color", Color("ff7b72"))
 	root.add_child(_feedback)
-	_refresh_saves()
 
-func _card(title_text: String) -> PanelContainer:
+	return root
+
+
+# --- Decor ----------------------------------------------------------------
+
+func _build_background() -> void:
+	var bg := ColorRect.new()
+	bg.color = Color("060d13")
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(bg)
+	# Bandes horizontales subtiles + repere vertical, comme le faux-plancher du jeu.
+	for index in 10:
+		var line := ColorRect.new()
+		line.color = Color(ACCENT_DIM.r, ACCENT_DIM.g, ACCENT_DIM.b, 0.09)
+		line.position = Vector2(0, 40 + index * 90)
+		line.size = Vector2(4000, 1)
+		bg.add_child(line)
+	var glow := ColorRect.new()
+	glow.color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.05)
+	glow.size = Vector2(900, 900)
+	glow.position = Vector2(-250, -350)
+	bg.add_child(glow)
+
+
+func _build_header() -> Control:
+	var top := HBoxContainer.new()
+	var brand := VBoxContainer.new()
+	brand.add_theme_constant_override("separation", 2)
+	brand.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(brand)
+	var title := Label.new()
+	title.text = "BACKBONE NETOPS"
+	title.add_theme_font_size_override("font_size", 48)
+	title.add_theme_color_override("font_color", Color("f0fbff"))
+	title.add_theme_constant_override("outline_size", 0)
+	brand.add_child(title)
+	var subtitle := Label.new()
+	subtitle.text = "BUILD  •  CONFIGURE  •  TROUBLESHOOT"
+	subtitle.add_theme_font_size_override("font_size", 15)
+	subtitle.add_theme_color_override("font_color", ACCENT)
+	subtitle.add_theme_constant_override("outline_size", 0)
+	brand.add_child(subtitle)
+
+	var badge := PanelContainer.new()
+	var badge_style := StyleBoxFlat.new()
+	badge_style.bg_color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.12)
+	badge_style.border_color = ACCENT_DIM
+	badge_style.set_border_width_all(1)
+	badge_style.set_corner_radius_all(4)
+	badge_style.content_margin_left = 14
+	badge_style.content_margin_right = 14
+	badge_style.content_margin_top = 7
+	badge_style.content_margin_bottom = 7
+	badge.add_theme_stylebox_override("panel", badge_style)
+	var version := Label.new()
+	version.text = "ALPHA 0.4.0  /  ns-3 ENGINE"
+	version.add_theme_font_size_override("font_size", 13)
+	version.add_theme_color_override("font_color", Color("9fd4ee"))
+	badge.add_child(version)
+	top.add_child(badge)
+	return top
+
+
+func _accent_separator() -> Control:
+	var box := VBoxContainer.new()
+	var line := ColorRect.new()
+	line.color = ACCENT_DIM
+	line.custom_minimum_size = Vector2(0, 1)
+	box.add_child(line)
+	return box
+
+
+func _card(title_text: String, icon: String) -> PanelContainer:
 	var panel := PanelContainer.new()
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.05, 0.10, 0.135, 0.94)
-	style.border_color = Color("24495d")
+	style.bg_color = BG_PANEL
+	style.border_color = ACCENT_DIM
 	style.set_border_width_all(1)
-	style.set_corner_radius_all(6)
-	style.content_margin_left = 24
-	style.content_margin_right = 24
+	style.set_corner_radius_all(8)
+	style.content_margin_left = 26
+	style.content_margin_right = 26
 	style.content_margin_top = 22
 	style.content_margin_bottom = 22
 	panel.add_theme_stylebox_override("panel", style)
@@ -121,12 +235,111 @@ func _card(title_text: String) -> PanelContainer:
 	content.add_theme_constant_override("separation", 14)
 	panel.add_child(content)
 	var title := Label.new()
-	title.text = title_text
-	title.add_theme_font_size_override("font_size", 20)
-	title.add_theme_color_override("font_color", Color("7dd8ff"))
+	title.text = "%s  %s" % [icon, title_text]
+	title.add_theme_font_size_override("font_size", 19)
+	title.add_theme_color_override("font_color", ACCENT)
 	content.add_child(title)
-	content.add_child(HSeparator.new())
+	var sep := ColorRect.new()
+	sep.color = Color(ACCENT_DIM.r, ACCENT_DIM.g, ACCENT_DIM.b, 0.6)
+	sep.custom_minimum_size = Vector2(0, 1)
+	content.add_child(sep)
 	return panel
+
+
+# --- Styled controls --------------------------------------------------------
+
+func _button_style(bg: Color, border: Color) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = bg
+	style.border_color = border
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(5)
+	style.content_margin_left = 16
+	style.content_margin_right = 16
+	style.content_margin_top = 12
+	style.content_margin_bottom = 12
+	return style
+
+
+func _primary_button(text: String) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.custom_minimum_size = Vector2(0, 56)
+	button.add_theme_font_size_override("font_size", 17)
+	button.add_theme_color_override("font_color", Color("04141c"))
+	button.add_theme_color_override("font_hover_color", Color("04141c"))
+	button.add_theme_color_override("font_pressed_color", Color("04141c"))
+	button.add_theme_stylebox_override("normal", _button_style(ACCENT, ACCENT))
+	button.add_theme_stylebox_override("hover", _button_style(Color("9de4ff"), Color("9de4ff")))
+	button.add_theme_stylebox_override("pressed", _button_style(Color("5fb8e0"), Color("5fb8e0")))
+	button.add_theme_stylebox_override("focus", _button_style(ACCENT, Color("f0fbff")))
+	return button
+
+
+func _secondary_button(text: String, accent: Color = ACCENT) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.custom_minimum_size = Vector2(0, 46)
+	button.add_theme_font_size_override("font_size", 14)
+	button.add_theme_color_override("font_color", accent)
+	button.add_theme_color_override("font_hover_color", Color("f0fbff"))
+	var dim_border := Color(accent.r, accent.g, accent.b, 0.5)
+	button.add_theme_stylebox_override("normal", _button_style(Color(0, 0, 0, 0.2), dim_border))
+	button.add_theme_stylebox_override("hover", _button_style(Color(accent.r, accent.g, accent.b, 0.16), accent))
+	button.add_theme_stylebox_override("pressed", _button_style(Color(accent.r, accent.g, accent.b, 0.3), accent))
+	button.add_theme_stylebox_override("focus", _button_style(Color(0, 0, 0, 0.2), Color("f0fbff")))
+	return button
+
+
+## Bouton non-cliquable pour une fonctionnalite pas encore disponible
+## (ex. multijoueur). Style attenue, sans etats hover/pressed.
+func _disabled_button(text: String) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.disabled = true
+	button.custom_minimum_size = Vector2(0, 46)
+	button.add_theme_font_size_override("font_size", 14)
+	button.add_theme_color_override("font_disabled_color", Color("4c6875"))
+	button.add_theme_stylebox_override("disabled", _button_style(Color(0, 0, 0, 0.15), Color(0.15, 0.24, 0.29, 0.5)))
+	return button
+
+
+func _styled_line_edit(placeholder: String) -> LineEdit:
+	var edit := LineEdit.new()
+	edit.placeholder_text = placeholder
+	edit.custom_minimum_size = Vector2(0, 48)
+	edit.add_theme_font_size_override("font_size", 15)
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0, 0, 0, 0.35)
+	style.border_color = ACCENT_DIM
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(4)
+	style.content_margin_left = 12
+	style.content_margin_right = 12
+	edit.add_theme_stylebox_override("normal", style)
+	var focus_style := style.duplicate()
+	focus_style.border_color = ACCENT
+	edit.add_theme_stylebox_override("focus", focus_style)
+	return edit
+
+
+func _styled_item_list() -> ItemList:
+	var list := ItemList.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0, 0, 0, 0.3)
+	style.border_color = ACCENT_DIM
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(4)
+	style.content_margin_left = 8
+	style.content_margin_top = 6
+	list.add_theme_stylebox_override("panel", style)
+	var selected_style := StyleBoxFlat.new()
+	selected_style.bg_color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.22)
+	selected_style.set_corner_radius_all(3)
+	list.add_theme_stylebox_override("selected", selected_style)
+	list.add_theme_stylebox_override("selected_focus", selected_style)
+	return list
+
 
 func _open_settings() -> void:
 	if _settings == null:

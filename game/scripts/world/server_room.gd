@@ -46,11 +46,14 @@ var _selected_cable_type := "rj45"
 var _type_counters: Dictionary = {}       # category -> compteur (pour les noms GameR1, GameSW1...)
 var _device_categories: Dictionary = {}   # device_name -> category
 var _device_positions: Dictionary = {}    # device_name -> Vector3
+var _device_yaws: Dictionary = {}         # device_name -> float (radians)
+var _racks: Dictionary = {}               # rack_name -> {position, yaw, count} pour le rackage
 var _interface_positions: Dictionary = {} # "device|interface" -> Vector3
 var _used_interfaces: Dictionary = {}     # device_name -> Array[String]
 var _cable_start: String = ""
 var _cable_start_interface: String = ""
 var _device_configs: Dictionary = {}      # device_name -> configuration CLI
+var _held_root: Node3D                     # objet tenu en main (viewmodel), enfant de la camera
 
 # --- Terminal de configuration des équipements --------------------------------
 var _terminal_layer: CanvasLayer
@@ -85,6 +88,7 @@ func _ready() -> void:
 	_build_technician_hub()
 	_build_objectives_panel()
 	_build_pause_menu()
+	_build_held_item()
 
 	Bridge.status_changed.connect(_on_bridge_status_changed)
 	Bridge.ensure_running()
@@ -92,11 +96,31 @@ func _ready() -> void:
 	Objectives.objective_completed.connect(_on_objective_completed)
 	Objectives.objectives_changed.connect(_refresh_objectives_panel)
 
+	GameState.settings_changed.connect(_on_settings_changed)
+	_on_settings_changed()
+
 	# Reconstruit immediatement les visuels 3D depuis la sauvegarde (sans PT).
 	_rebuild_visuals_from_save()
 	# Rattrape les objectifs eventuellement ajoutes au catalogue depuis la sauvegarde.
 	Objectives.evaluate()
 	_refresh_objectives_panel()
+
+	# Outil de dev : capture d'ecran automatique pour verification visuelle hors-jeu.
+	# N'a aucun effet sauf si la variable d'environnement BACKBONE_SCREENSHOT est
+	# definie (chemin de sortie). Ne s'active jamais pendant une partie normale.
+	var screenshot_path := OS.get_environment("BACKBONE_SCREENSHOT")
+	if not screenshot_path.is_empty():
+		_run_dev_screenshot(screenshot_path)
+
+
+func _run_dev_screenshot(path: String) -> void:
+	var setup_script := OS.get_environment("BACKBONE_SCREENSHOT_SETUP")
+	if not setup_script.is_empty() and has_method(setup_script):
+		call(setup_script)
+	await get_tree().create_timer(1.2).timeout
+	var image := get_viewport().get_texture().get_image()
+	image.save_png(path)
+	get_tree().quit()
 
 
 # --- Construction de la scene -------------------------------------------------
@@ -132,9 +156,13 @@ func _build_room() -> void:
 	_add_box(Vector3(0, -0.1, 0), Vector3(20, 0.2, 20), floor_mat)  # sol
 	_add_box(Vector3(0, 1.5, -10), Vector3(20, 3, 0.2), wall_mat)   # mur nord
 	_add_box(Vector3(0, 1.5, 10), Vector3(20, 3, 0.2), wall_mat)    # mur sud
-	_add_box(Vector3(10, 1.5, 0), Vector3(0.2, 3, 20), wall_mat)    # mur est
+	# Mur est perce d'une porte (2 segments) vers l'annexe pause/bureau.
+	_add_box(Vector3(10, 1.5, -5.75), Vector3(0.2, 3, 8.5), wall_mat)
+	_add_box(Vector3(10, 1.5, 5.75), Vector3(0.2, 3, 8.5), wall_mat)
 	_add_box(Vector3(-10, 1.5, 0), Vector3(0.2, 3, 20), wall_mat)   # mur ouest
 	_add_visual_box(Vector3(0, 3.05, 0), Vector3(20, 0.1, 20), ceiling_mat)
+
+	_build_annex_room(wall_mat, ceiling_mat)
 
 	# Dalles et joints du faux plancher.
 	var grid_mat := _material(Color("3a464b"), 0.75, 0.25)
@@ -146,10 +174,7 @@ func _build_room() -> void:
 	# Luminaires industriels au plafond.
 	for x in [-6.0, 0.0, 6.0]:
 		for z in [-6.0, 0.0, 6.0]:
-			var lamp_mat := _material(Color("d8f5ff"), 0.2)
-			lamp_mat.emission_enabled = true
-			lamp_mat.emission = Color("b8ecff")
-			lamp_mat.emission_energy_multiplier = 3.0
+			var lamp_mat := _material(Color("d8f5ff"), 0.2, 0.0, false, Color("b8ecff"), 3.0)
 			_add_visual_box(Vector3(x, 2.96, z), Vector3(2.4, 0.04, 0.45), lamp_mat)
 			var lamp := OmniLight3D.new()
 			lamp.position = Vector3(x, 2.75, z)
@@ -168,11 +193,124 @@ func _build_room() -> void:
 		_add_visual_box(Vector3(x, 0.018, 3.5), Vector3(3.6, 0.018, 0.045), marking)
 
 
-func _material(color: Color, roughness := 0.7, metallic := 0.0) -> StandardMaterial3D:
+const KENNEY_ASSETS := "res://assets/kenney/"
+
+## Instancie un modele Kenney (CC0, kenney.nl) enfant de la salle, a la position
+## donnee. sub_path est relatif a assets/kenney/ (ex: "furniture/table.glb").
+## Retourne null si le fichier est absent (pas d'assets telecharges) pour que
+## les appelants puissent se rabattre sur une geometrie codee en secours.
+func _spawn_kenney_prop(sub_path: String, pos: Vector3, yaw := 0.0, scale_mult := 1.0) -> Node3D:
+	var instance := _load_kenney_prop(sub_path, scale_mult)
+	if instance == null:
+		return null
+	add_child(instance)
+	instance.position = pos
+	instance.rotation.y = yaw
+	return instance
+
+
+## Comme _spawn_kenney_prop mais l'instance est enfant de parent (ex: le corps
+## d'un equipement), pour qu'elle suive sa position/rotation/selection.
+func _spawn_kenney_prop_local(parent: Node3D, sub_path: String, pos: Vector3, yaw := 0.0, scale_mult := 1.0) -> Node3D:
+	var instance := _load_kenney_prop(sub_path, scale_mult)
+	if instance == null:
+		return null
+	parent.add_child(instance)
+	instance.position = pos
+	instance.rotation.y = yaw
+	return instance
+
+
+func _load_kenney_prop(sub_path: String, scale_mult: float) -> Node3D:
+	var path := KENNEY_ASSETS + sub_path
+	if not ResourceLoader.exists(path):
+		return null
+	var scene: PackedScene = load(path)
+	if scene == null:
+		return null
+	var instance := scene.instantiate()
+	instance.scale = Vector3.ONE * scale_mult
+	return instance
+
+
+## Petite annexe pause/bureau a l'est de la salle serveur, reliee par la porte
+## percee dans le mur est. Casse la sensation de "salle carree unique". Le
+## mobilier utilise les modeles Kenney (CC0, kenney.nl/assets/furniture-kit)
+## quand disponibles dans assets/kenney/furniture/, sinon des boites codees.
+func _build_annex_room(wall_mat: Material, ceiling_mat: Material) -> void:
+	var floor_mat := _material(Color("2a2420"), 0.85, 0.05)
+	var annex_wall := _material(Color("3d362d"), 0.85, 0.05)
+	_add_box(Vector3(14, -0.1, 0), Vector3(8, 0.2, 9), floor_mat)
+	_add_box(Vector3(14, 1.5, -4.5), Vector3(8, 3, 0.2), annex_wall)
+	_add_box(Vector3(14, 1.5, 4.5), Vector3(8, 3, 0.2), annex_wall)
+	_add_box(Vector3(18, 1.5, 0), Vector3(0.2, 3, 9), annex_wall)
+	_add_visual_box(Vector3(14, 3.05, 0), Vector3(8, 0.1, 9), ceiling_mat)
+
+	var lamp_mat := _material(Color("ffe3b8"), 0.3, 0.0, false, Color("ffd9a0"), 2.2)
+	_add_visual_box(Vector3(14, 2.96, 0), Vector3(1.8, 0.04, 0.4), lamp_mat)
+	var lamp := OmniLight3D.new()
+	lamp.position = Vector3(14, 2.7, 0)
+	lamp.light_color = Color("ffe6c2")
+	lamp.light_energy = 1.1
+	lamp.omni_range = 7.0
+	add_child(lamp)
+
+	# Table + chaises + bibliotheque, coin pause. Modeles Kenney si disponibles.
+	if _spawn_kenney_prop("furniture/table.glb", Vector3(14, 0, 0)) == null:
+		var table_mat := _material(Color("5a4632"), 0.6, 0.1, true)
+		_add_box(Vector3(14, 0.38, 0), Vector3(1.1, 0.06, 1.1), table_mat)
+		for i in 4:
+			var angle := i * PI / 2.0
+			var leg_pos := Vector3(14 + cos(angle) * 0.42, 0.19, sin(angle) * 0.42)
+			_add_box(leg_pos, Vector3(0.06, 0.38, 0.06), table_mat)
+	var chair_a := _spawn_kenney_prop("furniture/chair.glb", Vector3(12.9, 0, 0), PI * 1.5)
+	var chair_b := _spawn_kenney_prop("furniture/chair.glb", Vector3(15.1, 0, 0), PI * 0.5)
+	if chair_a == null or chair_b == null:
+		var seat_mat := _material(Color("4a4038"), 0.7, 0.05)
+		if chair_a == null: _add_box(Vector3(12.8, 0.22, 0), Vector3(0.5, 0.44, 1.6), seat_mat)
+		if chair_b == null: _add_box(Vector3(15.2, 0.22, 0), Vector3(0.5, 0.44, 1.6), seat_mat)
+	if _spawn_kenney_prop("furniture/bookcaseOpen.glb", Vector3(17.7, 0, -3.8), PI) == null:
+		var shelf_mat := _material(Color("4a4038"), 0.6, 0.1)
+		_add_box(Vector3(17.7, 0.9, -3.8), Vector3(0.4, 1.8, 0.9), shelf_mat)
+
+	var label := Label3D.new()
+	label.text = "ESPACE PAUSE"
+	label.position = Vector3(14, 2.4, -4.3)
+	label.font_size = 30
+	label.pixel_size = 0.0035
+	label.modulate = Color("f0dfc4")
+	label.no_depth_test = true
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	add_child(label)
+
+
+var _material_cache: Dictionary = {}  # cle -> StandardMaterial3D, evite de regenerer les textures de bruit
+
+## Materiau de base. Avec detailed=true, ajoute une legere variation de surface
+## (bruit procedural sur la rugosite) et un liseret de contour (rim light) pour
+## que les equipements se detachent mieux du sol sombre - sans dependre d'assets
+## externes. emission_color (alpha > 0) rend le materiau lumineux (LED, ecran,
+## luminaire) sans avoir a le modifier apres coup - important car les materiaux
+## sont mis en cache par signature et partages entre plusieurs objets.
+func _material(color: Color, roughness := 0.7, metallic := 0.0, detailed := false, emission_color := Color(0, 0, 0, 0), emission_strength := 1.0) -> StandardMaterial3D:
+	var key := "%s|%.3f|%.3f|%s|%s|%.2f" % [color.to_html(), roughness, metallic, str(detailed), emission_color.to_html(), emission_strength]
+	if _material_cache.has(key):
+		return _material_cache[key]
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color
 	mat.roughness = roughness
 	mat.metallic = metallic
+	if emission_color.a > 0.0:
+		mat.emission_enabled = true
+		mat.emission = Color(emission_color.r, emission_color.g, emission_color.b)
+		mat.emission_energy_multiplier = emission_strength
+	if detailed:
+		# Liseret de contour tres discret pour detacher la silhouette du fond
+		# sombre, sans creer de reflet parasite sous les luminaires.
+		mat.rim_enabled = true
+		mat.rim = 0.06
+		mat.rim_tint = 0.25
+	_material_cache[key] = mat
 	return mat
 
 
@@ -213,10 +351,7 @@ func _build_technician_station() -> void:
 	var laptop_mat := _material(Color("2c363d"), 0.3, 0.7)
 	_add_local_box(laptop, Vector3(0, 0, 0.18), Vector3(0.78, 0.055, 0.52), laptop_mat)
 	_add_local_box(laptop, Vector3(0, 0.31, -0.05), Vector3(0.78, 0.58, 0.055), laptop_mat)
-	var screen_mat := _material(Color("102b3a"), 0.25)
-	screen_mat.emission_enabled = true
-	screen_mat.emission = Color("17638a")
-	screen_mat.emission_energy_multiplier = 1.8
+	var screen_mat := _material(Color("102b3a"), 0.25, 0.0, false, Color("17638a"), 1.8)
 	_add_local_box(laptop, Vector3(0, 0.31, -0.083), Vector3(0.69, 0.48, 0.012), screen_mat)
 	var laptop_col := CollisionShape3D.new()
 	var laptop_shape := BoxShape3D.new()
@@ -299,14 +434,114 @@ func _build_ui() -> void:
 	_update_help_text()
 
 
+## Applique les reglages qui concernent la scene 3D : echelle de rendu du
+## viewport et visibilite de l'aide a l'ecran (parametre "show_help_overlay").
+func _on_settings_changed() -> void:
+	GameState.apply_render_scale(get_viewport())
+	if _help_label != null:
+		_help_label.visible = bool(GameState.settings.get("show_help_overlay", true))
+
+
 func _update_help_text() -> void:
 	var selected := "?"
 	if not _catalog.is_empty():
 		selected = _catalog[_selected_index]["label"]
+	_help_label.visible = bool(GameState.settings.get("show_help_overlay", true))
 	_help_label.text = (
 		"ZQSD deplacer   |   Souris regarder   |   Tab materiel (%s)   |   E poser\n"
 		+ "Clic sur port cabler   |   T console   |   Echap pause"
 	) % selected
+
+
+## --- Objet tenu en main (viewmodel) ------------------------------------------
+## Affiche une maquette de l'equipement selectionne dans le coin bas-droit de la
+## vue, comme si le technicien le portait. Reconstruit a chaque changement de
+## selection. N'a aucun collider et n'affecte ni le monde ni les sauvegardes.
+
+func _build_held_item() -> void:
+	var cam := _player.get_node("Camera3D") as Camera3D
+	if cam == null:
+		return
+	_held_root = Node3D.new()
+	_held_root.name = "HeldItem"
+	cam.add_child(_held_root)
+	_held_root.position = Vector3(0.34, -0.27, -0.62)
+	_held_root.rotation_degrees = Vector3(7, -24, 4)
+	_update_held_item()
+
+
+## Cache l'objet tenu en main pendant les interfaces plein ecran (inventaire,
+## terminal, hub, pause) ou l'on ne veut pas qu'il empiete sur l'UI.
+func _update_held_item_visibility() -> void:
+	if _held_root == null:
+		return
+	_held_root.visible = not (_palette_open or _terminal_open or _technician_hub_open or _paused)
+
+
+func _update_held_item() -> void:
+	if _held_root == null:
+		return
+	for child in _held_root.get_children():
+		child.queue_free()
+	if _catalog.is_empty():
+		return
+	var category: String = _catalog[_selected_index].get("id", "router")
+	var holder := Node3D.new()
+	holder.scale = Vector3.ONE * 0.3
+	_held_root.add_child(holder)
+	_build_held_model(holder, category)
+
+
+## Maquette simplifiee (sans ports ni etiquette) qui evoque le modele reel.
+func _build_held_model(holder: Node3D, category: String) -> void:
+	match category:
+		"switch", "switch_l3":
+			_add_local_box(holder, Vector3.ZERO, Vector3(1.7, 0.15, 0.56), _material(Color("32393d"), 0.55, 0.15))
+			_add_local_box(holder, Vector3(0, -0.015, 0.285), Vector3(1.6, 0.09, 0.05), _material(Color("111417"), 0.5, 0.2))
+		"pc":
+			_add_local_box(holder, Vector3.ZERO, Vector3(0.46, 0.82, 0.52), _material(Color("414b53"), 0.55, 0.15))
+			_add_local_box(holder, Vector3(0, 0, 0.266), Vector3(0.38, 0.72, 0.025), _material(Color("161d21"), 0.55, 0.35))
+		"nas", "server":
+			_add_local_box(holder, Vector3.ZERO, Vector3(0.52, 0.82, 0.62), _material(Color("38464e"), 0.5, 0.18))
+			for y in [-0.23, -0.08, 0.07, 0.22]:
+				_add_local_box(holder, Vector3(0, y, 0.316), Vector3(0.34, 0.09, 0.018), _material(Color("38464e"), 0.5, 0.18))
+		"access_point":
+			var puck := MeshInstance3D.new()
+			var cyl := CylinderMesh.new()
+			cyl.height = 0.12
+			cyl.top_radius = 0.36
+			cyl.bottom_radius = 0.38
+			cyl.material = _material(Color("d7e1e5"), 0.55, 0.08)
+			puck.mesh = cyl
+			holder.add_child(puck)
+		"client_laptop":
+			_add_local_box(holder, Vector3(0, -0.16, 0.05), Vector3(0.42, 0.03, 0.3), _material(Color("3a444b"), 0.5, 0.2))
+			var screen := _add_local_box(holder, Vector3(0, 0.06, -0.1), Vector3(0.42, 0.28, 0.02), _material(Color("3a444b"), 0.5, 0.2))
+			screen.rotation.x = deg_to_rad(-12)
+		"rack":
+			for x in [-0.28, 0.28]:
+				for z in [-0.31, 0.31]:
+					_add_local_box(holder, Vector3(x, 0, z), Vector3(0.045, 1.9, 0.045), _material(Color("2b3438"), 0.6, 0.3))
+		"table":
+			_add_local_box(holder, Vector3(0, 0.75, 0), Vector3(1.6, 0.06, 0.9), _material(Color("56636a"), 0.55, 0.32))
+		"firewall":
+			_add_local_box(holder, Vector3.ZERO, Vector3(0.85, 0.32, 0.56), _material(Color("2a5fa5"), 0.45, 0.1))
+			_add_local_box(holder, Vector3(0.15, -0.02, 0.285), Vector3(0.5, 0.16, 0.02), _material(Color("13223a"), 0.4, 0.15))
+		_:
+			# routeur / wireless_router
+			_add_local_box(holder, Vector3.ZERO, Vector3(1.4, 0.16, 0.62), _material(Color("5b6a73"), 0.5, 0.15))
+			_add_local_box(holder, Vector3(0, -0.025, 0.325), Vector3(1.3, 0.09, 0.05), _material(Color("1c252b"), 0.55, 0.1))
+			for x in [-0.5, 0.5]:
+				var antenna := MeshInstance3D.new()
+				var rod := CylinderMesh.new()
+				rod.height = 0.42
+				rod.top_radius = 0.013
+				rod.bottom_radius = 0.02
+				rod.material = _material(Color("1c252b"), 0.55, 0.1)
+				antenna.mesh = rod
+				antenna.position = Vector3(x, 0.29, -0.2)
+				antenna.rotation.x = deg_to_rad(-18)
+				holder.add_child(antenna)
 
 
 func _build_palette() -> void:
@@ -424,6 +659,7 @@ func _select_inventory_item(index: int) -> void:
 		"device":
 			_selected_index = index
 			_update_help_text()
+			_update_held_item()
 			_close_palette()
 		"cable":
 			_selected_cable_type = entry.get("id", "rj45")
@@ -633,6 +869,7 @@ func _open_technician_hub() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_player.set_active(false)
 	_show_hub_tab("dashboard")
+	_update_held_item_visibility()
 
 
 func _close_technician_hub() -> void:
@@ -640,6 +877,7 @@ func _close_technician_hub() -> void:
 	_technician_hub.visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_player.set_active(true)
+	_update_held_item_visibility()
 
 
 func _show_hub_tab(tab: String) -> void:
@@ -773,12 +1011,21 @@ func _apply_event_visual(event: Dictionary) -> void:
 			var pos := Vector3(wp[0], wp[1], wp[2])
 			var device_name: String = event.get("name", "")
 			var category: String = event.get("category", "router")
-			_spawn_device_mesh(pos, device_name, category, float(event.get("world_yaw", 0.0)))
+			var yaw := float(event.get("world_yaw", 0.0))
+			var containing_rack := "" if category == "rack" else _find_containing_rack(pos)
+			_spawn_device_mesh(pos, device_name, category, yaw, not containing_rack.is_empty())
 			_device_categories[device_name] = category
 			_device_positions[device_name] = pos
+			_device_yaws[device_name] = yaw
 			_ensure_device_config(device_name, category)
 			var count: int = _type_counters.get(category, 0) + 1
 			_type_counters[category] = count
+			if category == "rack":
+				_racks[device_name] = {"position": pos, "yaw": yaw, "count": 0}
+			elif not containing_rack.is_empty():
+				var rack: Dictionary = _racks[containing_rack]
+				rack["count"] = int(rack.get("count", 0)) + 1
+				_racks[containing_rack] = rack
 		"add_link":
 			var dev1: String = event.get("dev1", "")
 			var dev2: String = event.get("dev2", "")
@@ -801,7 +1048,10 @@ func _mark_interface_used(device_name: String, iface: String) -> void:
 	_used_interfaces[device_name] = used
 
 
-func _spawn_device_mesh(pos: Vector3, device_name: String, category: String, yaw := 0.0) -> void:
+## compact=true est utilise pour les equipements rackes (etiquettes reduites,
+## pas de labels de port flottants) afin d'eviter le fouillis visuel quand
+## plusieurs unites sont empilees a quelques centimetres les unes des autres.
+func _spawn_device_mesh(pos: Vector3, device_name: String, category: String, yaw := 0.0, compact := false) -> void:
 	var body := StaticBody3D.new()
 	body.name = device_name if not device_name.is_empty() else "Device"
 	body.set_meta("device_name", device_name)
@@ -810,26 +1060,40 @@ func _spawn_device_mesh(pos: Vector3, device_name: String, category: String, yaw
 	body.global_position = pos
 	body.rotation.y = yaw
 
-	var size := Vector3(1.35, 0.22, 0.58)
+	var size := Vector3(1.4, 0.16, 0.62)
+	var collision_offset := Vector3.ZERO
 	match category:
-		"switch", "switch_l3": size = Vector3(1.65, 0.20, 0.52)
+		"switch", "switch_l3": size = Vector3(1.7, 0.15, 0.56)
+		"firewall": size = Vector3(0.85, 0.32, 0.56)
 		"pc", "nas", "server": size = Vector3(0.46, 0.82, 0.52)
-		"access_point": size = Vector3(0.75, 0.12, 0.75)
+		"client_laptop": size = Vector3(0.5, 0.45, 0.4)
+		"wireless_router": size = Vector3(1.0, 0.8, 0.6)
+		"access_point": size = Vector3(0.75, 0.6, 0.75)
+		"rack": size = Vector3(0.62, 1.9, 0.68)
+		"table":
+			size = Vector3(1.6, 0.8, 0.9)
+			collision_offset = Vector3(0, 0.4, 0)
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = size
 	col.shape = shape
+	col.position = collision_offset
 	body.add_child(col)
 
 	match category:
-		"switch", "switch_l3": _build_switch_model(body, device_name)
+		"switch", "switch_l3": _build_switch_model(body, device_name, compact)
+		"firewall": _build_firewall_model(body, device_name, compact)
 		"pc": _build_pc_model(body, device_name)
+		"client_laptop": _build_client_laptop_model(body, device_name)
 		"nas", "server": _build_server_model(body, device_name, category)
-		"access_point": _build_access_point_model(body, device_name)
-		_: _build_router_model(body, device_name)
-	if category not in ["pc", "nas", "server"]:
+		"wireless_router": _build_wireless_router_model(body, device_name, compact)
+		"access_point": _build_access_point_model(body, device_name, compact)
+		"rack": _build_rack_model(body, device_name)
+		"table": _build_table_model(body, device_name)
+		_: _build_router_model(body, device_name, compact)
+	if category not in ["pc", "nas", "server", "client_laptop", "rack", "table"] and not compact:
 		_build_equipment_cart(body)
-	_add_device_ports(body, device_name, category)
+	_add_device_ports(body, device_name, category, compact)
 
 
 func _add_local_box(parent: Node3D, pos: Vector3, size: Vector3, mat: Material) -> MeshInstance3D:
@@ -843,61 +1107,105 @@ func _add_local_box(parent: Node3D, pos: Vector3, size: Vector3, mat: Material) 
 	return instance
 
 
-func _add_device_label(parent: Node3D, device_name: String, pos: Vector3) -> void:
+func _add_device_label(parent: Node3D, device_name: String, pos: Vector3, compact := false) -> void:
 	var label := Label3D.new()
 	label.text = device_name
 	label.position = pos
-	label.font_size = 36
-	label.pixel_size = 0.0042
+	label.font_size = 14 if compact else 36
+	label.pixel_size = 0.0014 if compact else 0.0042
 	label.modulate = Color("e8f7ff")
 	label.outline_size = 3
-	label.no_depth_test = true
+	label.no_depth_test = not compact
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	parent.add_child(label)
 
 
-func _build_router_model(body: Node3D, device_name: String) -> void:
-	var shell := _material(Color("52636d"), 0.32, 0.52)
-	var front := _material(Color("182329"), 0.42, 0.62)
-	_add_local_box(body, Vector3.ZERO, Vector3(1.35, 0.22, 0.58), shell)
-	_add_local_box(body, Vector3(0, 0, 0.296), Vector3(1.25, 0.15, 0.025), front)
-	for x in [-0.56, -0.5, 0.5, 0.56]:
-		var antenna := MeshInstance3D.new()
-		var cylinder := CylinderMesh.new()
-		cylinder.height = 0.48
-		cylinder.top_radius = 0.014
-		cylinder.bottom_radius = 0.022
-		cylinder.material = front
-		antenna.mesh = cylinder
-		antenna.position = Vector3(x, 0.34, -0.18)
-		body.add_child(antenna)
-	_add_device_label(body, device_name, Vector3(0, 0.22, 0.02))
+## Rangee de LEDs d'etat clignotantes (visuel), signature classique du materiel
+## reseau reel. n LEDs espacees le long de x, sur la face avant en z.
+func _add_led_strip(body: Node3D, n: int, center_x: float, spread: float, y: float, z: float) -> void:
+	var colors := [Color("3ddc6a"), Color("3ddc6a"), Color("ffcf4a"), Color("3ddc6a")]
+	for i in n:
+		var x := center_x + (i - (n - 1) / 2.0) * (spread / maxf(n - 1, 1))
+		var led := _material(Color("111"), 0.3, 0.0, false, colors[i % colors.size()], 1.6)
+		_add_local_box(body, Vector3(x, y, z), Vector3(0.02, 0.02, 0.008), led)
 
 
-func _build_switch_model(body: Node3D, device_name: String) -> void:
-	var shell := _material(Color("49606b"), 0.27, 0.68)
-	var front := _material(Color("10181c"), 0.4, 0.72)
-	_add_local_box(body, Vector3.ZERO, Vector3(1.65, 0.20, 0.52), shell)
-	_add_local_box(body, Vector3(0, 0, 0.266), Vector3(1.56, 0.14, 0.025), front)
-	for x in [-0.76, 0.76]:
-		_add_local_box(body, Vector3(x, 0, 0.0), Vector3(0.12, 0.28, 0.60), shell)
-	_add_device_label(body, device_name, Vector3(0, 0.20, 0.02))
+## Oreilles de montage rack 19", pour l'air "materiel 1U" meme pose au sol.
+func _add_rack_ears(body: Node3D, half_width: float, mat: Material) -> void:
+	for x in [-half_width - 0.03, half_width + 0.03]:
+		_add_local_box(body, Vector3(x, 0, 0.24), Vector3(0.05, 0.22, 0.03), mat)
+
+
+## Boitier plat type Cisco 88x : coque fine + panneau de ports en legere
+## saillie sur le bas de la face avant (comme un routeur d'entree de gamme
+## reel). Proportions et disposition inspirees de photos de reference.
+func _build_router_model(body: Node3D, device_name: String, compact := false) -> void:
+	var shell := _material(Color("5b6a73"), 0.5, 0.15, true)
+	var panel := _material(Color("1c252b"), 0.55, 0.1)
+	_add_local_box(body, Vector3.ZERO, Vector3(1.4, 0.16, 0.62), shell)
+	# Panneau de ports : bande plus etroite, en leger surplomb sur le bas de la face avant.
+	_add_local_box(body, Vector3(0, -0.025, 0.325), Vector3(1.3, 0.09, 0.05), panel)
+	if not compact:
+		_add_rack_ears(body, 0.7, shell)
+	_add_led_strip(body, 4, -0.5, 0.24, 0.045, 0.316)
+	if not compact:
+		for x in [-0.5, 0.5]:
+			var antenna := MeshInstance3D.new()
+			var cylinder := CylinderMesh.new()
+			cylinder.height = 0.42
+			cylinder.top_radius = 0.013
+			cylinder.bottom_radius = 0.02
+			cylinder.material = panel
+			antenna.mesh = cylinder
+			antenna.position = Vector3(x, 0.29, -0.2)
+			antenna.rotation.x = deg_to_rad(-18)
+			body.add_child(antenna)
+	_add_device_label(body, device_name, Vector3(0, 0.16, 0.02), compact)
+
+
+## Switch rackable type Cisco/Netgear 24 ports : coque noire large et plate,
+## grille de ventilation laterale, 2 rangees de ports.
+func _build_switch_model(body: Node3D, device_name: String, compact := false) -> void:
+	var shell := _material(Color("32393d"), 0.55, 0.15, true)
+	var panel := _material(Color("111417"), 0.5, 0.2)
+	_add_local_box(body, Vector3.ZERO, Vector3(1.7, 0.15, 0.56), shell)
+	_add_local_box(body, Vector3(0, -0.015, 0.285), Vector3(1.6, 0.09, 0.05), panel)
+	# Grille de ventilation sur le cote gauche (fines lamelles horizontales).
+	var vent_mat := _material(Color("0c0f11"), 0.6, 0.1)
+	for i in 5:
+		_add_local_box(body, Vector3(-0.79, -0.03 + i * 0.022, 0.1), Vector3(0.03, 0.012, 0.42), vent_mat)
+	if not compact:
+		_add_rack_ears(body, 0.85, shell)
+	_add_led_strip(body, 6, 0.35, 0.9, 0.045, 0.278)
+	_add_device_label(body, device_name, Vector3(0, 0.15, 0.02), compact)
+
+
+## Boitier compact type UTM/firewall bureau : plus cube que les autres
+## equipements reseau, couleur d'accent bleue, ports groupes d'un cote.
+func _build_firewall_model(body: Node3D, device_name: String, compact := false) -> void:
+	var shell := _material(Color("2a5fa5"), 0.45, 0.1, true)
+	var panel := _material(Color("13223a"), 0.4, 0.15)
+	_add_local_box(body, Vector3.ZERO, Vector3(0.85, 0.32, 0.56), shell)
+	_add_local_box(body, Vector3(0.15, -0.02, 0.285), Vector3(0.5, 0.16, 0.02), panel)
+	var vent_mat := _material(Color("173259"), 0.5, 0.2)
+	for i in 6:
+		_add_local_box(body, Vector3(0.34, -0.1 + i * 0.035, 0.0), Vector3(0.14, 0.015, 0.4), vent_mat)
+	_add_led_strip(body, 2, -0.15, 0.1, 0.03, 0.297)
+	_add_device_label(body, device_name, Vector3(0, 0.3, 0.02), compact)
 
 
 func _build_pc_model(body: Node3D, device_name: String) -> void:
-	var shell := _material(Color("414b53"), 0.42, 0.42)
+	var shell := _material(Color("414b53"), 0.55, 0.15, true)
 	var front := _material(Color("161d21"), 0.55, 0.35)
 	_add_local_box(body, Vector3.ZERO, Vector3(0.46, 0.82, 0.52), shell)
 	_add_local_box(body, Vector3(0, 0, 0.266), Vector3(0.38, 0.72, 0.025), front)
-	var power := _material(Color("4ddf88"), 0.3)
-	power.emission_enabled = true
-	power.emission = Color("22aa55")
+	var power := _material(Color("4ddf88"), 0.3, 0.0, false, Color("22aa55"))
 	_add_local_box(body, Vector3(0.14, 0.28, 0.282), Vector3(0.035, 0.035, 0.012), power)
 	_add_device_label(body, device_name, Vector3(0, 0.50, 0.0))
 
 
 func _build_server_model(body: Node3D, device_name: String, category: String) -> void:
-	var shell := _material(Color("38464e"), 0.35, 0.58)
+	var shell := _material(Color("38464e"), 0.5, 0.18, true)
 	var front := _material(Color("10171b"), 0.5, 0.55)
 	_add_local_box(body, Vector3.ZERO, Vector3(0.52, 0.82, 0.62), shell)
 	_add_local_box(body, Vector3(0, 0, 0.316), Vector3(0.43, 0.72, 0.025), front)
@@ -913,42 +1221,97 @@ func _build_server_model(body: Node3D, device_name: String, category: String) ->
 	_add_device_label(body, device_name, Vector3(0, 0.50, 0.0))
 
 
-func _build_access_point_model(body: Node3D, device_name: String) -> void:
-	var shell := _material(Color("d7e1e5"), 0.5, 0.15)
-	var puck := MeshInstance3D.new()
-	var cylinder := CylinderMesh.new()
-	cylinder.height = 0.12
-	cylinder.top_radius = 0.36
-	cylinder.bottom_radius = 0.38
-	cylinder.material = shell
-	puck.mesh = cylinder
-	body.add_child(puck)
-	var led := _material(Color("55dd99"), 0.2)
-	led.emission_enabled = true
-	led.emission = Color("33cc77")
-	_add_local_box(body, Vector3(0, 0.07, 0.18), Vector3(0.05, 0.02, 0.025), led)
-	_add_device_label(body, device_name, Vector3(0, 0.22, 0.0))
+## Point d'acces : utilise le modele Kenney (CC0) machine_wireless si present,
+## sinon le puck procedural en secours.
+func _build_access_point_model(body: Node3D, device_name: String, compact := false) -> void:
+	var prop := _spawn_kenney_prop_local(body, "space/machine_wireless.glb", Vector3(0, 0, 0), 0.0, 0.55)
+	if prop == null:
+		var shell := _material(Color("d7e1e5"), 0.55, 0.08, true)
+		var puck := MeshInstance3D.new()
+		var cylinder := CylinderMesh.new()
+		cylinder.height = 0.12
+		cylinder.top_radius = 0.36
+		cylinder.bottom_radius = 0.38
+		cylinder.material = shell
+		puck.mesh = cylinder
+		body.add_child(puck)
+		var led := _material(Color("55dd99"), 0.2, 0.0, false, Color("33cc77"))
+		_add_local_box(body, Vector3(0, 0.07, 0.18), Vector3(0.05, 0.02, 0.025), led)
+	_add_device_label(body, device_name, Vector3(0, 0.32, 0.0), compact)
+
+
+## Routeur Wi-Fi : utilise le modele Kenney (CC0) machine_wirelessCable si
+## present, sinon le routeur a antennes procedural en secours.
+func _build_wireless_router_model(body: Node3D, device_name: String, compact := false) -> void:
+	var prop := _spawn_kenney_prop_local(body, "space/machine_wirelessCable.glb", Vector3(0, 0, 0), 0.0, 1.05)
+	if prop == null:
+		_build_router_model(body, device_name, compact)
+		return
+	_add_device_label(body, device_name, Vector3(0, 0.5, 0.0), compact)
+
+
+## Baie de brassage 19" : cadre ouvert avec montants et traverses. Sert de
+## support de rackage - voir _next_rack_slot() / _register_if_racked().
+func _build_rack_model(body: Node3D, device_name: String) -> void:
+	var frame := _material(Color("2b3438"), 0.6, 0.3, true)
+	var rail := _material(Color("15191b"), 0.5, 0.4)
+	for x in [-0.28, 0.28]:
+		for z in [-0.31, 0.31]:
+			_add_local_box(body, Vector3(x, 0, z), Vector3(0.045, 1.9, 0.045), frame)
+	for y in [-0.93, -0.47, 0.0, 0.47, 0.93]:
+		_add_local_box(body, Vector3(0, y, -0.31), Vector3(0.6, 0.03, 0.03), rail)
+	_add_local_box(body, Vector3(0, 0, -0.33), Vector3(0.58, 1.86, 0.02), rail)
+	_add_device_label(body, device_name, Vector3(0, 1.02, 0.0))
+
+
+## Table de travail posable depuis l'inventaire, pour poser du materiel dessus.
+func _build_table_model(body: Node3D, device_name: String) -> void:
+	var top := _material(Color("56636a"), 0.55, 0.32, true)
+	var leg := _material(Color("262f34"), 0.4, 0.6)
+	_add_local_box(body, Vector3(0, 0.75, 0), Vector3(1.6, 0.06, 0.9), top)
+	for x in [-0.7, 0.7]:
+		for z in [-0.38, 0.38]:
+			_add_local_box(body, Vector3(x, 0.375, z), Vector3(0.06, 0.75, 0.06), leg)
+	_add_device_label(body, device_name, Vector3(0, 0.95, 0.0))
+
+
+## Ordinateur portable client (place-able, distinct de l'unique portable du
+## technicien qui est integre a la salle et non deplacable).
+func _build_client_laptop_model(body: Node3D, device_name: String) -> void:
+	var shell := _material(Color("3a444b"), 0.5, 0.2, true)
+	var screen_mat := _material(Color("0f2530"), 0.3, 0.05, false, Color("1c6f96"), 1.4)
+	_add_local_box(body, Vector3(0, -0.16, 0.05), Vector3(0.42, 0.03, 0.3), shell)
+	var screen := _add_local_box(body, Vector3(0, 0.06, -0.1), Vector3(0.42, 0.28, 0.02), shell)
+	screen.rotation.x = deg_to_rad(-12)
+	var display := _add_local_box(body, Vector3(0, 0.06, -0.092), Vector3(0.36, 0.22, 0.01), screen_mat)
+	display.rotation.x = deg_to_rad(-12)
+	_add_device_label(body, device_name, Vector3(0, 0.28, 0.0))
 
 
 func _build_equipment_cart(body: Node3D) -> void:
 	var frame := _material(Color("3b4449"), 0.35, 0.65)
-	var shelf := _material(Color("69767c"), 0.5, 0.4)
+	var shelf := _material(Color("69767c"), 0.5, 0.4, true)
 	_add_local_box(body, Vector3(0, -0.17, 0), Vector3(1.8, 0.07, 0.75), shelf)
 	for x in [-0.78, 0.78]:
 		for z in [-0.27, 0.27]:
 			_add_local_box(body, Vector3(x, -0.50, z), Vector3(0.055, 0.65, 0.055), frame)
 
 
-func _add_device_ports(body: Node3D, device_name: String, category: String) -> void:
+func _add_device_ports(body: Node3D, device_name: String, category: String, compact := false) -> void:
 	var interfaces: Array = DeviceInterfaces.BY_CATEGORY.get(category, [])
 	for index in interfaces.size():
 		var iface: String = interfaces[index]
 		var local_pos := Vector3.ZERO
 		match category:
-			"switch", "switch_l3": local_pos = Vector3((index - (interfaces.size() - 1) / 2.0) * 0.22, -0.01, 0.305)
+			"switch", "switch_l3":
+				var half := ceili(interfaces.size() / 2.0)
+				var row := index / half
+				var col := index % half
+				local_pos = Vector3((col - (half - 1) / 2.0) * 0.18, 0.02 if row == 0 else -0.03, 0.312)
+			"firewall": local_pos = Vector3(0.15 + (index - (interfaces.size() - 1) / 2.0) * 0.1, -0.02, 0.297)
 			"pc", "nas", "server": local_pos = Vector3(-0.12 + index * 0.16, -0.20, 0.355)
 			"access_point": local_pos = Vector3(-0.10 + index * 0.20, -0.02, 0.40)
-			_: local_pos = Vector3((index - (interfaces.size() - 1) / 2.0) * 0.30, -0.01, 0.335)
+			_: local_pos = Vector3((index - (interfaces.size() - 1) / 2.0) * 0.26, -0.025, 0.352)
 		var port := StaticBody3D.new()
 		port.name = "%s_%s" % [device_name, iface]
 		port.position = local_pos
@@ -966,14 +1329,15 @@ func _add_device_ports(body: Node3D, device_name: String, category: String) -> v
 		port_col.shape = port_shape
 		port.add_child(port_col)
 		body.add_child(port)
-		var port_label := Label3D.new()
-		port_label.text = iface
-		port_label.position = local_pos + Vector3(0, -0.075, 0.04)
-		port_label.font_size = 20
-		port_label.pixel_size = 0.0022
-		port_label.no_depth_test = true
-		port_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		body.add_child(port_label)
+		if not compact:
+			var port_label := Label3D.new()
+			port_label.text = iface
+			port_label.position = local_pos + Vector3(0, -0.075, 0.04)
+			port_label.font_size = 20
+			port_label.pixel_size = 0.0022
+			port_label.no_depth_test = true
+			port_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			body.add_child(port_label)
 		_interface_positions["%s|%s" % [device_name, iface]] = body.to_global(local_pos)
 
 
@@ -1074,6 +1438,7 @@ func _toggle_pause() -> void:
 	_paused = not _paused
 	_pause_menu.visible = _paused
 	_player.set_active(not _paused)
+	_update_held_item_visibility()
 
 
 func _toggle_palette() -> void:
@@ -1086,6 +1451,7 @@ func _toggle_palette() -> void:
 	else:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		_player.set_active(true)
+	_update_held_item_visibility()
 
 
 func _close_palette() -> void:
@@ -1093,6 +1459,7 @@ func _close_palette() -> void:
 	_palette_layer.visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_player.set_active(true)
+	_update_held_item_visibility()
 
 
 func _open_terminal(device_name: String) -> void:
@@ -1114,6 +1481,7 @@ func _open_terminal(device_name: String) -> void:
 	_player.set_active(false)
 	_focus_terminal_input()
 	_refresh_terminal()
+	_update_held_item_visibility()
 
 
 func _close_terminal() -> void:
@@ -1121,6 +1489,7 @@ func _close_terminal() -> void:
 	_terminal_layer.visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_player.set_active(true)
+	_update_held_item_visibility()
 
 
 func _on_terminal_command_submitted(text: String) -> void:
@@ -1466,6 +1835,12 @@ func _refresh_terminal() -> void:
 	pass
 
 
+## Categories d'equipement assez compactes/plates pour etre rackees proprement.
+## Serveurs, NAS, PC etc sont trop hauts et donnent un rendu illisible une fois
+## empiles a quelques centimetres d'ecart - ils se posent au sol comme d'habitude.
+const RACKABLE_CATEGORIES := ["router", "switch", "switch_l3", "wireless_router", "firewall", "access_point"]
+
+
 func _place_device() -> void:
 	if _catalog.is_empty():
 		return
@@ -1474,13 +1849,29 @@ func _place_device() -> void:
 	var count: int = _type_counters.get(category, 0) + 1
 	var dev_name := "%s%d" % [_name_prefix(category), count]
 
-	var forward := -_player.global_transform.basis.z
-	var pos := _player.global_position + forward * 2.5
-	match category:
-		"pc", "nas", "server": pos.y = 0.41
-		_: pos.y = 0.825
-	var toward_player := _player.global_position - pos
-	var world_yaw := atan2(toward_player.x, toward_player.z)
+	var pos: Vector3
+	var world_yaw: float
+	var rack_name := "" if category == "rack" else _raycast_rack_target()
+	if not rack_name.is_empty() and category not in RACKABLE_CATEGORIES:
+		_flash_feedback("Seul le matériel réseau compact se racke (routeur, switch, AP, firewall...)")
+		return
+	if not rack_name.is_empty():
+		var slot = _next_rack_slot(rack_name)
+		if slot == null:
+			_flash_feedback("Baie pleine : vise une autre baie ou pose au sol")
+			return
+		pos = slot["position"]
+		world_yaw = slot["yaw"]
+	else:
+		var forward := -_player.global_transform.basis.z
+		pos = _player.global_position + forward * 2.5
+		match category:
+			"pc", "nas", "server", "client_laptop": pos.y = 0.41
+			"table": pos.y = 0.0
+			"rack": pos.y = 0.95
+			_: pos.y = 0.825
+		var toward_player := _player.global_position - pos
+		world_yaw = atan2(toward_player.x, toward_player.z)
 
 	var event := {
 		"type": "place_device",
@@ -1492,7 +1883,44 @@ func _place_device() -> void:
 	}
 	_apply_event_visual(event)
 	GameState.record(event)
+	if not rack_name.is_empty():
+		_flash_feedback("%s racke dans %s" % [dev_name, rack_name])
 	print("[game] pose %s (%s)" % [dev_name, entry["label"]])
+
+
+## Retourne le nom de la baie visee (dans la portee du cablage), ou "".
+func _raycast_rack_target() -> String:
+	var hit := _raycast_target()
+	var target: String = hit.get("device", "")
+	if target.is_empty() or _device_categories.get(target, "") != "rack":
+		return ""
+	return target
+
+
+## Prochain emplacement libre dans une baie (6 U), ou null si pleine.
+func _next_rack_slot(rack_name: String):
+	if not _racks.has(rack_name):
+		return null
+	var rack: Dictionary = _racks[rack_name]
+	var count: int = int(rack.get("count", 0))
+	if count >= 6:
+		return null
+	var local_y := -0.75 + count * 0.22
+	var rack_pos: Vector3 = rack["position"]
+	return {"position": rack_pos + Vector3(0, local_y, 0), "yaw": rack["yaw"]}
+
+
+## Retourne le nom de la baie dans le volume de laquelle se trouve pos, ou "".
+## Pure (aucune mutation) - utilise a la fois pour decider si un equipement
+## doit s'afficher en mode compact et pour incrementer l'occupation de la baie.
+func _find_containing_rack(pos: Vector3) -> String:
+	for rack_name in _racks:
+		var rack: Dictionary = _racks[rack_name]
+		var rack_pos: Vector3 = rack["position"]
+		if absf(pos.x - rack_pos.x) < 0.15 and absf(pos.z - rack_pos.z) < 0.15 \
+				and pos.y > rack_pos.y - 1.0 and pos.y < rack_pos.y + 1.0:
+			return rack_name
+	return ""
 
 
 func _name_prefix(category: String) -> String:
@@ -1506,6 +1934,9 @@ func _name_prefix(category: String) -> String:
 		"nas": return "GameNAS"
 		"server": return "GameSRV"
 		"pc": return "GamePC"
+		"client_laptop": return "GameLap"
+		"rack": return "GameRack"
+		"table": return "GameTable"
 		_: return "GameDev"
 
 
@@ -1632,6 +2063,60 @@ func _on_save_pressed() -> void:
 func _on_quit_to_menu() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE  # souris libre pour le menu
 	get_tree().change_scene_to_file(MENU_SCENE)
+
+
+# --- Outils de dev (capture d'ecran) -------------------------------------------
+## Fonctions de mise en scene optionnelles, appelees par nom via la variable
+## d'environnement BACKBONE_SCREENSHOT_SETUP avant la capture. Aucun effet en
+## jeu normal.
+
+func _dev_rack_demo() -> void:
+	var rack_pos := Vector3(0, 0.95, 0)
+	_apply_event_visual({
+		"type": "place_device", "name": "Rack1", "model": "rack", "category": "rack",
+		"world_pos": [rack_pos.x, rack_pos.y, rack_pos.z], "world_yaw": 0.0,
+	})
+	for category in ["switch", "router", "access_point"]:
+		var slot = _next_rack_slot("Rack1")
+		var pos: Vector3 = slot["position"]
+		_apply_event_visual({
+			"type": "place_device", "name": "%s_r" % category, "model": category, "category": category,
+			"world_pos": [pos.x, pos.y, pos.z], "world_yaw": 0.0,
+		})
+	_apply_event_visual({
+		"type": "place_device", "name": "Table1", "model": "table", "category": "table",
+		"world_pos": [1.8, 0.0, 0.0], "world_yaw": 0.0,
+	})
+	_apply_event_visual({
+		"type": "place_device", "name": "Lap1", "model": "client_laptop", "category": "client_laptop",
+		"world_pos": [1.8, 0.75, 0.0], "world_yaw": 0.0,
+	})
+	_player.global_position = Vector3(0.6, 1.5, 3.2)
+	_player.look_at(Vector3(0.6, 1.0, 0.0), Vector3.UP)
+
+
+func _dev_closeup_equipment() -> void:
+	var base := Vector3(0, 0, 0)
+	var count := 0
+	var first_pos := base
+	for entry in _catalog:
+		if entry.get("kind", "") != "device" or not entry.get("placeable", true):
+			continue
+		var category: String = entry["id"]
+		var pos := base + Vector3(count * 2.4, 0, 0)
+		match category:
+			"pc", "nas", "server": pos.y = 0.41
+			_: pos.y = 0.825
+		if count == 0:
+			first_pos = pos
+		_apply_event_visual({
+			"type": "place_device", "name": "%s_dev" % category,
+			"model": entry["model"], "category": category,
+			"world_pos": [pos.x, pos.y, pos.z], "world_yaw": 0.0,
+		})
+		count += 1
+	_player.global_position = first_pos + Vector3(0, 0.35, 1.7)
+	_player.look_at(first_pos + Vector3(0, 0.15, 0), Vector3.UP)
 
 
 func _flash_feedback(text: String) -> void:

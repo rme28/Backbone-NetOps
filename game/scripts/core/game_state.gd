@@ -12,6 +12,9 @@ const SETTINGS_PATH := "user://settings.json"
 const SAVE_VERSION := 2
 
 signal event_recorded(event: Dictionary)
+## Emis chaque fois qu'un parametre change (ou est applique), pour que les scenes
+## reagissent immediatement (echelle de rendu, aide a l'ecran, etc.).
+signal settings_changed
 
 var save_name := ""
 var score := 0
@@ -28,11 +31,64 @@ var settings := {
 	"render_scale": 100.0,
 	"mouse_sensitivity": 50.0,
 	"ui_scale": 100.0,
+	"show_help_overlay": true,
 }
 
 
 func _ready() -> void:
 	load_settings()
+	# Applique les reglages une fois l'arbre pret (fenetre disponible).
+	apply_all_settings.call_deferred()
+
+
+## (Re)applique tous les parametres persistes au moteur : audio, fenetre, vsync,
+## echelle UI et echelle de rendu 3D. Appele au demarrage et a chaque changement.
+func apply_all_settings() -> void:
+	_ensure_audio_buses()
+	_apply_bus_volume("Master", settings.get("master_volume", 80.0))
+	_apply_bus_volume("Music", settings.get("music_volume", 65.0))
+	_apply_bus_volume("Effects", settings.get("effects_volume", 80.0))
+
+	var window := get_window()
+	if window != null:
+		var fullscreen: bool = bool(settings.get("fullscreen", false))
+		window.mode = Window.MODE_FULLSCREEN if fullscreen else Window.MODE_WINDOWED
+		window.content_scale_factor = float(settings.get("ui_scale", 100.0)) / 100.0
+
+	var vsync: bool = bool(settings.get("vsync", true))
+	DisplayServer.window_set_vsync_mode(
+		DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED
+	)
+	# L'echelle de rendu 3D est propre a chaque viewport : appliquee ici sur le
+	# viewport racine, et re-appliquee par les scenes 3D via settings_changed.
+	apply_render_scale(get_viewport())
+	settings_changed.emit()
+
+
+## Applique l'echelle de rendu 3D a un viewport donne (0.5 a 1.2).
+func apply_render_scale(viewport: Viewport) -> void:
+	if viewport == null:
+		return
+	viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+	viewport.scaling_3d_scale = clampf(float(settings.get("render_scale", 100.0)) / 100.0, 0.1, 2.0)
+
+
+func _ensure_audio_buses() -> void:
+	# Le projet ne definit pas de bus dedie : on cree Music/Effects a la volee
+	# pour que leurs curseurs de volume aient un effet, sans casser l'audio.
+	for bus_name in ["Music", "Effects"]:
+		if AudioServer.get_bus_index(bus_name) == -1:
+			var index := AudioServer.bus_count
+			AudioServer.add_bus(index)
+			AudioServer.set_bus_name(index, bus_name)
+			AudioServer.set_bus_send(index, "Master")
+
+
+func _apply_bus_volume(bus_name: String, percent: float) -> void:
+	var index := AudioServer.get_bus_index(bus_name)
+	if index == -1:
+		return
+	AudioServer.set_bus_volume_db(index, linear_to_db(maxf(percent / 100.0, 0.0001)))
 
 
 func save_settings() -> void:

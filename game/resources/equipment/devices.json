@@ -5,11 +5,14 @@
 	{"id":"router","section":"network","kind":"device","label":"Routeur","description":"Routage IPv4 et protocoles dynamiques.","model":"router","placeable":true},
 	{"id":"firewall","section":"network","kind":"device","label":"Firewall","description":"Filtrage, zones et NAT.","model":"firewall","placeable":true},
 	{"id":"access_point","section":"network","kind":"device","label":"Point d'accès","description":"Accès Wi-Fi relié au réseau filaire.","model":"access_point","placeable":true},
+	{"id":"rack","section":"network","kind":"device","label":"Baie de brassage","description":"Structure 19 pouces. Vise-la et pose un équipement (E) pour le racker automatiquement.","model":"rack","placeable":true},
 
 	{"id":"nas","section":"systems","kind":"device","label":"NAS","description":"Stockage réseau multi-baies.","model":"nas","placeable":true},
 	{"id":"server","section":"systems","kind":"device","label":"Serveur","description":"Serveur polyvalent pour les services du lab.","model":"server","placeable":true},
 	{"id":"pc","section":"systems","kind":"device","label":"Ordinateur fixe","description":"Poste client Ethernet.","model":"desktop","placeable":true},
-	{"id":"laptop","section":"systems","kind":"special","label":"Ordinateur portable","description":"Poste unique du technicien, déjà installé dans la salle.","model":"laptop","placeable":false},
+	{"id":"client_laptop","section":"systems","kind":"device","label":"Ordinateur portable","description":"Poste client portable, configurable comme un PC.","model":"laptop_client","placeable":true},
+	{"id":"table","section":"systems","kind":"device","label":"Table de travail","description":"Surface pour poser du matériel.","model":"table","placeable":true},
+	{"id":"laptop","section":"systems","kind":"special","label":"Ordinateur portable technicien","description":"Poste unique du technicien, déjà installé dans la salle.","model":"laptop","placeable":false},
 
 	{"id":"rj45","section":"accessories","kind":"cable","label":"Câble RJ45","description":"Câble Ethernet cuivre standard.","model":"rj45","placeable":false},
 	{"id":"fiber","section":"accessories","kind":"cable","label":"Câble optique","description":"Fibre pour liaisons haut débit.","model":"fiber","placeable":false},
