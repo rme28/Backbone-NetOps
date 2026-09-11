@@ -129,19 +129,15 @@ func _find_dhcp_offer(dev: String, iface: String, taken: Dictionary) -> Dictiona
 			var base := _parse_ip(network.get_slice("/", 0))
 			if base < 0:
 				continue
-			# Le serveur doit lui-meme avoir une adresse dans le reseau du pool.
-			var server_in_pool := false
-			for server_iface in _configs.get(server, {}).get("interfaces", {}):
-				var server_addr := str(_configs[server]["interfaces"][server_iface].get("address", ""))
-				if not server_addr.is_empty() and server_addr != "dhcp" \
-						and _same_subnet(_parse_ip(server_addr.get_slice("/", 0)), base, prefix):
-					server_in_pool = true
-			if not server_in_pool:
-				continue
+			if prefix < 1 or prefix > 30: continue
+			var server_addr := str(_iface(server,endpoint["iface"]).get("address",""))
+			if not _same_subnet(_parse_ip(server_addr.get_slice("/",0)),base,prefix): continue
 			var gateway_ip := _parse_ip(str(pool.get("gateway", "")))
 			var mask := (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF
 			var network_base := base & mask
-			for offset in range(10, 250):
+			var usable_end := (1 << (32-prefix)) - 1
+			var start := 10 if usable_end > 10 else 1
+			for offset in range(start, mini(usable_end, 250)):
 				var candidate := network_base + offset
 				if taken.has(candidate) or candidate == gateway_ip:
 					continue
@@ -174,13 +170,23 @@ func interface_admin_up(dev: String, iface: String) -> bool:
 
 ## Etat protocole : cable branche + les deux extremites admin up.
 func link_protocol_up(dev: String, iface: String) -> bool:
-	if not interface_admin_up(dev, iface):
+	if not _physical_continuity(dev,iface,[]): return false
+	if _configs.get(dev,{}).get("category","") == "passive":
+		for other in _configs[dev]["interfaces"]:
+			if other != iface and not _physical_continuity(dev,other,[]): return false
+	return true
+
+func _physical_continuity(dev: String, iface: String, visited: Array) -> bool:
+	var key := dev+"|"+iface
+	if key in visited or not interface_admin_up(dev,iface): return false
+	visited = visited + [key]
+	var peer: Dictionary = _link_index.get(key,{})
+	if peer.is_empty() or not interface_admin_up(peer.peer_dev,peer.peer_iface): return false
+	if _configs.get(peer.peer_dev,{}).get("category","") == "passive":
+		for other in _configs[peer.peer_dev]["interfaces"]:
+			if other != peer.peer_iface: return _physical_continuity(peer.peer_dev,other,visited)
 		return false
-	var key := "%s|%s" % [dev, iface]
-	if not _link_index.has(key):
-		return false
-	var peer: Dictionary = _link_index[key]
-	return interface_admin_up(peer["peer_dev"], peer["peer_iface"])
+	return true
 
 
 func interface_up(dev: String, iface: String) -> bool:
@@ -231,11 +237,18 @@ func ping(src_dev: String, dst_ip: String) -> Dictionary:
 	# Chemin retour : la cible doit savoir joindre l'IP source utilisee.
 	var src_ip: int = forward.get("src_ip", -1)
 	if src_ip >= 0:
-		var back := _walk(forward["dst_dev"], src_ip, [forward["dst_dev"]])
+		var back := _walk(forward["dst_dev"], src_ip, [forward["dst_dev"]], false)
 		if not back["success"]:
 			var result := _fail("no-return-path", forward["path"])
 			result["dst_dev"] = forward["dst_dev"]
 			return result
+	# Reverse only the translations created by this probe, in reverse order.
+	# No unsolicited inbound mapping and no persistent fake packet table.
+	var translations: Array = forward.get("translations",[]).duplicate()
+	translations.reverse()
+	for mapping in translations:
+		var returned := _walk(mapping.router,mapping.inside_ip,[mapping.router],false)
+		if not returned.success: return _fail("no-return-path",forward.path)
 	return forward
 
 
@@ -246,14 +259,16 @@ func traceroute(src_dev: String, dst_ip: String) -> Dictionary:
 
 ## Coeur du parcours L3 : suit les sauts routeur par routeur jusqu'au
 ## proprietaire de dst. Retourne {success, reason, path, dst_dev, src_ip}.
-func _walk(start_dev: String, dst: int, path: Array) -> Dictionary:
+func _walk(start_dev: String, dst: int, path: Array, translate := true) -> Dictionary:
 	var current := start_dev
 	var first_src_ip := -1
+	var ingress := ""
+	var translations: Array = []
 	for _hop in HOP_LIMIT:
 		# Livraison : l'equipement courant possede l'adresse sur une iface active.
 		var owned := _owned_iface_for_ip(current, dst)
 		if not owned.is_empty():
-			return {"success": true, "reason": "ok", "path": path, "dst_dev": current, "src_ip": first_src_ip}
+			return {"success": true, "reason": "ok", "path": path, "dst_dev": current, "src_ip": first_src_ip, "translations": translations}
 		var route := _route_lookup(current, dst)
 		if route.is_empty():
 			return _fail("no-route", path)
@@ -262,6 +277,13 @@ func _walk(start_dev: String, dst: int, path: Array) -> Dictionary:
 			return _fail("egress-down", path)
 		if first_src_ip < 0:
 			first_src_ip = _parse_ip(_addr(current, egress).get_slice("/", 0))
+		if first_src_ip < 0: return _fail("no-source-address",path)
+		var config: Dictionary = _configs[current]
+		if translate and bool(config.get("nat_enabled",false)) and str(_iface(current,ingress).get("nat_role","")) == "inside" and str(_iface(current,egress).get("nat_role","")) == "outside":
+			var public_ip := _parse_ip(_addr(current,egress).get_slice("/",0))
+			if public_ip < 0: return _fail("no-source-address",path)
+			translations.append({"router":current,"inside_ip":first_src_ip,"outside_ip":public_ip})
+			first_src_ip = public_ip
 		var arp_target: int = route["arp_target"]
 		var owner := _find_l2_neighbor_owning(current, egress, arp_target)
 		if owner.is_empty():
@@ -275,6 +297,7 @@ func _walk(start_dev: String, dst: int, path: Array) -> Dictionary:
 			var category := str(_configs.get(next_dev, {}).get("category", ""))
 			if not (category in L3_FORWARDERS):
 				return _fail("host-will-not-forward", path)
+		ingress = owner["iface"]
 		current = next_dev
 	return _fail("ttl-exceeded", path)
 
@@ -492,6 +515,7 @@ static func reason_text(reason: String) -> String:
 	match reason:
 		"ok": return "Success"
 		"bad-address": return "% Invalid address"
+		"no-source-address": return "% Source interface has no IPv4 address"
 		"unknown-source": return "% Unknown source device"
 		"no-route": return "% No route to destination (check ip route / default gateway)"
 		"egress-down": return "% Outgoing interface is down"

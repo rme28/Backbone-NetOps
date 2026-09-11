@@ -14,3 +14,6 @@ fi
 "${godot_command[@]}" --headless --path game --script tests/test_host_service.gd
 BACKBONE_SELFTEST=1 timeout 30 "${godot_command[@]}" --headless --path game scenes/world/server_room.tscn
 BACKBONE_INTERIOR_TEST=1 timeout 30 "${godot_command[@]}" --headless --path game scenes/world/server_room.tscn
+
+"${godot_command[@]}" --headless --path game --script tests/test_wan.gd
+BACKBONE_WAN_TEST=1 timeout 30 "${godot_command[@]}" --headless --path game scenes/world/server_room.tscn

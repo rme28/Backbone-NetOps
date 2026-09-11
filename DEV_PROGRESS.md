@@ -1,10 +1,11 @@
 # Functional handover — 2026-09-11
 - Done: furnished glazed workplace; canonical metre-scale equipment/chamfered chassis/RJ45; real-model inventory icons; curved cables; shared UI theme; quiet foley/fans; tabletop placement/replay; precision view (right click).
-- NetSim unchanged. Original starter journal and equipment names retained. External furniture is Kenney CC0 (docs/THIRD_PARTY_ASSETS.md).
+- Existing NetSim retained and extended for passive cabling, operator topology and probe-scoped NAT. Starter names retained. External furniture is Kenney CC0 (docs/THIRD_PARTY_ASSETS.md).
 - Tested: Godot Flatpak 4.7.2, 28 model + 13 runtime checks; interior suite: 8 capsule passages, glass collision, 33 individual port rays, tabletop placement/JSON replay. Import and diff checks clean.
 - Rendering: Mobile Vulkan + 2x MSAA, material batches and wall occlusion. Seven 1080p views sampled 52–61 FPS on Quadro K2100M; not a long-duration benchmark.
 - Functional pass P1: crouch + clearance test implemented; desk/chair/sign/TV/socket corrections; fixed wall-to-patch passive runs now in NetSim. Validated: 30 network tests, 13 runtime checks, player clearance and interior suites.
 - PC desktop integrated: real IP/DHCP form, host terminal, simulated connectivity browser, seven office monitors bound to journaled hosts. 11 host-service checks + runtime suite pass, real GUI renders reviewed.
-- In progress: WAN model drafted (operator_network.gd, probe-scoped NAT in NetSim); not wired or validated yet. Next: finish WAN and tests, focused refactor/docs, global QA, v0.5.0-alpha per RELEASING.md.
+- WAN implemented: real ONT handoff, operator DHCP, 198.51.100.10 service, inside/outside NAT and return validation. 15 model cases + real GUI/CLI/unplug/save-state/25 connector runtime checks pass.
+- Next: focused refactor/docs, final world QA and v0.5.0-alpha per RELEASING.md.
 - Git: custom-cli pushed through P1; existing SemVer alpha workflow retained; no LFS in this repo.
-- Limitations: old arbitrary user placements may intersect new partitions; fixed wall jacks now connect to numbered patch ports. Radio Wi-Fi, DNS/NAT/STP remain unimplemented as before.
+- Limitations: old arbitrary user placements may intersect new partitions; fixed wall jacks now connect to numbered patch ports. Radio Wi-Fi, DNS/STP remain unimplemented. NAT models probe responses, not TCP/UDP sessions.

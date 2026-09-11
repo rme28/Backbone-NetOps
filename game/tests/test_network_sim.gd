@@ -23,6 +23,7 @@ func _initialize() -> void:
 	_test_queries(sim)
 	_test_dhcp(sim)
 	_test_passive(sim)
+	_test_small_dhcp_pool(sim)
 
 	print("")
 	if _failures == 0:
@@ -254,4 +255,15 @@ func _test_passive(sim: Node) -> void:
 	_check("passive wall-to-patch continuity",sim.can_reach("A","10.0.0.2"))
 	links.pop_back()
 	sim.rebuild(configs,links)
+	_check("unpatched socket has no carrier",not sim.link_protocol_up("A","eth0"))
 	_check("unpatched socket cannot reach destination",not sim.can_reach("A","10.0.0.2"))
+
+
+func _test_small_dhcp_pool(sim: Node) -> void:
+	var router := _router({"eth0":"10.0.0.1/30","eth1":"10.1.0.1/24"})
+	router["dhcp_pools"] = [{"network":"10.0.0.0/30","gateway":"10.0.0.1"}]
+	var configs := {"R":router,"PC":_host("dhcp")}
+	sim.rebuild(configs,[_link("PC","eth0","R","eth0")])
+	_check("DHCP /30 stays inside pool",sim.effective_address("PC","eth0") == "10.0.0.2/30")
+	sim.rebuild(configs,[_link("PC","eth0","R","eth1")])
+	_check("DHCP cannot serve another router interface subnet",sim.effective_address("PC","eth0").is_empty())

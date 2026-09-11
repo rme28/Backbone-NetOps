@@ -44,3 +44,25 @@ func port(parent: Node3D, pos: Vector3, device: String, iface: String, label: St
 	var key := device+"|"+iface
 	room._interface_positions[key] = jack.global_position
 	directions[key] = jack.global_basis.z
+
+func wan() -> void:
+	var device := "WAN-ONT"
+	fixed[device] = true
+	room._device_categories[device] = "wan"
+	room._device_configs[device] = {"category":"passive","hostname":device,"interfaces":{"client":{"shutdown":false},"uplink":{"shutdown":false}}}
+	var body := StaticBody3D.new()
+	room.add_child(body)
+	body.position = Vector3(-14.285,1.35,12)
+	body.rotation.y = PI/2
+	body.set_meta("device_name",device)
+	room._equipment_art.chassis(body,Vector3(0,0,0.045),Vector3(0.28,0.20,0.09),room._material(Color("c7ceca")),0.009)
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(0.28,0.20,0.09)
+	col.shape = shape
+	col.position.z = 0.045
+	body.add_child(col)
+	port(body,Vector3(0,-0.035,0.099),device,"client","LAN")
+	room._equipment_art.text(body,"ONT / FIBRE",Vector3(0,0.055,0.099),0.00045)
+	room._add_signage(Vector3(-14.28,1.76,12),"DHCP / 203.0.113.0/24",Color("bfe4df"),PI/2)
+	room._equipment_art.batch(body)

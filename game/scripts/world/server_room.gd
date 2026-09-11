@@ -13,7 +13,7 @@ const TERMINAL_COMMANDS := [
 	"show ip interface brief", "show ip route", "show vlan brief",
 	"ping", "traceroute", "hostname", "interface", "description",
 	"ip address", "ip address dhcp", "ip route", "ip default-gateway",
-	"ip dhcp pool",
+	"ip dhcp pool", "ip nat inside", "ip nat outside", "ip nat overload", "no ip nat overload", "no ip nat inside", "no ip nat outside",
 	"no shutdown", "shutdown", "no ip address", "no ip route", "no vlan",
 	"vlan", "name",
 	"switchport mode access", "switchport mode trunk",
@@ -181,6 +181,9 @@ func _ready() -> void:
 		_run_selftest.call_deferred()
 	if OS.get_environment("BACKBONE_INTERIOR_TEST") == "1":
 		_interior_test = preload("res://tests/test_interior.gd").new()
+		_interior_test.run.call_deferred(self)
+	if OS.get_environment("BACKBONE_WAN_TEST") == "1":
+		_interior_test = preload("res://tests/test_wan_runtime.gd").new()
 		_interior_test.run.call_deferred(self)
 	var icons_path := OS.get_environment("BACKBONE_CATALOG_ICONS")
 	if not icons_path.is_empty():
@@ -510,10 +513,8 @@ func _build_south_wing(wall_mat: Material, ceiling_mat: Material) -> void:
 	_add_box(Vector3(-12.2, 1.5, 14), Vector3(4.4, 3, 0.2), wall_mat)
 	_add_zone_light(Vector3(-12.2, 2.7, 12), Color("dceaf2"), 1.5, 6.0)
 	_add_signage(Vector3(-9.885, 2.7, 12), "LOCAL TECHNIQUE", Color("ffd166"), PI / 2.0)
-	# Boitier operateur + conduits (decor : le point d'entree WAN du batiment).
-	var box_mat := _material(Color("4a5258"), 0.5, 0.3, true)
-	_add_visual_box(Vector3(-14.2, 1.4, 12), Vector3(0.3, 0.9, 0.7), box_mat)
-	_add_signage(Vector3(-14.285, 2.05, 12), "ARRIVEE OPERATEUR (WAN)", Color("9adf9a"), PI / 2.0)
+	_fixed_network.wan()
+	_add_signage(Vector3(-14.285,2.05,12),"ARRIVÉE OPÉRATEUR",Color("9adf9a"),PI/2)
 	var conduit := _material(Color("35434a"), 0.35, 0.65)
 	_add_visual_box(Vector3(-14.25, 2.5, 12), Vector3(0.12, 1.3, 0.12), conduit)
 	_add_visual_box(Vector3(-12.2, 2.88, 12), Vector3(4.2, 0.1, 0.14), conduit)
@@ -1883,6 +1884,9 @@ func _open_terminal(device_name: String) -> void:
 		_update_held_item_visibility()
 		return
 	if _fixed_network.fixed.has(device_name):
+		if device_name == "WAN-ONT":
+			_flash_feedback("Remise opérateur : DHCP ou 203.0.113.x/24, passerelle 203.0.113.1. Test : 198.51.100.10")
+			return
 		_flash_feedback("Brassage passif : relier la prise au port de panneau portant le même numéro.")
 		return
 	_terminal_device = device_name
@@ -1989,7 +1993,11 @@ func _save_device_config(device_name: String) -> void:
 ## Pousse l'etat courant (configs + liens du journal) dans le modele reseau
 ## logique, puis rafraichit les indicateurs visuels qui en dependent.
 func _sync_netsim() -> void:
-	NetSim.rebuild(_device_configs, NetSim.links_from_events(GameState.events))
+	var configs := _device_configs.duplicate(true)
+	configs.merge(preload("res://scripts/network/operator_network.gd").configs())
+	var links := NetSim.links_from_events(GameState.events)
+	links.append_array(preload("res://scripts/network/operator_network.gd").links())
+	NetSim.rebuild(configs, links)
 	_refresh_port_leds()
 	# Certains objectifs dependent de l'etat reseau (liens actifs), pas
 	# seulement du journal : reevaluation a chaque changement de config.
@@ -2006,6 +2014,7 @@ func _is_host_device() -> bool:
 
 func _execute_terminal_command(command: String) -> void:
 	var words := command.to_lower().split(" ", false)
+	if _handle_nat_command(words): return
 	if command == "?": _show_terminal_help(""); return
 	if _command_matches(words, ["clear"]): _terminal_output.text = ""; return
 	if _command_matches(words, ["end"]):
@@ -2263,6 +2272,7 @@ func _handle_switchport(words: PackedStringArray) -> void:
 func _show_running_config() -> void:
 	var config: Dictionary = _device_configs[_terminal_device]
 	_append_terminal("Building configuration...\n\nhostname %s\n!\n" % config["hostname"])
+	if config.get("nat_enabled",false): _append_terminal("ip nat overload\n")
 	if _is_switch_device():
 		for vlan_id in config.get("vlans", {}):
 			if str(vlan_id) != "1":
@@ -2271,6 +2281,7 @@ func _show_running_config() -> void:
 		var state: Dictionary = config["interfaces"][iface]
 		_append_terminal("interface %s\n" % iface)
 		if not str(state["description"]).is_empty(): _append_terminal(" description %s\n" % state["description"])
+		if not str(state.get("nat_role","")).is_empty(): _append_terminal(" ip nat "+state.nat_role+"\n")
 		if not str(state["address"]).is_empty(): _append_terminal(" ip address %s\n" % state["address"])
 		if _is_switch_device():
 			if str(state.get("mode", "access")) == "trunk":
@@ -2958,3 +2969,21 @@ func _ensure_office_hosts() -> void:
 	for event in _office_hosts:
 		if not known.has(event.name): GameState.events.append(event.duplicate(true))
 	GameState.events.append({"type":"office_hosts_v1"})
+
+
+func _handle_nat_command(words: PackedStringArray) -> bool:
+	var removing := words.size() > 0 and words[0] == "no"
+	var parts := Array(words)
+	if removing: parts.pop_front()
+	if parts.size() < 2 or parts[0] != "ip" or parts[1] != "nat": return false
+	var config: Dictionary = _device_configs[_terminal_device]
+	if config.category not in ["router","wireless_router","firewall"]:
+		_append_terminal("% NAT requires a router or firewall.\n"); return true
+	if parts.size() == 3 and parts[2] == "overload" and _terminal_mode == "config":
+		config["nat_enabled"] = not removing
+	elif parts.size() == 3 and parts[2] in ["inside","outside"] and _terminal_mode == "interface":
+		config.interfaces[_terminal_interface]["nat_role"] = "" if removing else parts[2]
+	else:
+		_append_terminal("% Config: ip nat overload. Interface: ip nat inside|outside. Prefix no to disable.\n"); return true
+	_save_device_config(_terminal_device)
+	return true
