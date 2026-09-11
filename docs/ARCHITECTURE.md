@@ -1,161 +1,145 @@
-# Architecture overview
+# Architecture and developer handover
 
-This document targets developers building scenarios and missions on top of the
-simulator base. Code comments are in French; public docs are in English.
+Godot 4.7, Mobile Vulkan. Open `game/project.godot`; `tools/verify.sh` runs all
+headless suites using Godot/Godot4 or the installed Flatpak.
 
-## Layers
+## Ownership
 
-```
-game/scripts/
-  core/game_state.gd       GameState autoload: event journal, saves, settings
-  network/network_sim.gd   NetSim autoload: authoritative network logic model
-  network/bridge_client.gd Bridge autoload: optional local ns-3 helper service
-  network/interfaces.gd    Interface lists per device category
-  missions/objectives.gd   Objectives autoload: declarative objective catalog
-  world/server_room.gd     Level: 3D world, interactions, terminal UI, visuals
-```
-
-Separation rule: NetSim never touches the scene tree or UI. The level feeds it
-data and reads back results. Objectives read the journal and query NetSim.
-
-## The event journal (single source of truth)
-
-Every world mutation is an event appended to `GameState.events` and replayed on
-load. Current event types:
-
-| type | fields |
+| Module | Responsibility |
 |---|---|
-| place_device | name, model, category, world_pos, world_yaw, supported (optional) |
-| add_link | dev1, iface1, dev2, iface2, cable |
-| remove_link | dev1, iface1, dev2, iface2 |
-| remove_device | name (cables must be removed first; the game does this) |
-| ping_ok | src, dst, hops (progress marker, no visual effect) |
+| `core/game_state.gd` | Save files, event journal, device configuration, settings |
+| `network/network_sim.gd` | Authoritative IPv4, VLAN, DHCP, routing, reachability and probe NAT; no scene dependency |
+| `network/operator_network.gd` | Fixed simulated ISP topology and documentation IPv4 ranges |
+| `network/host_service.gd` | PC configuration validation and diagnostic commands; persistence callback |
+| `network/interfaces.gd` | Interface names by category |
+| `equipment/catalog.gd` | Data-driven equipment catalog loader |
+| `player/player.gd` | Movement, mouse view, crouch and overhead clearance |
+| `world/server_room.gd` | Scene coordinator, journal-to-world replay, targeting, cable/placement interactions, UI session state |
+| `world/building.gd` | Existing room layout, furniture and imported prop normalization |
+| `world/interior_art.gd` | Architecture details, shared materials, static batching |
+| `world/equipment_art.gd` | Canonical metre-scale equipment meshes, ports, thumbnails |
+| `world/infrastructure/fixed_network.gd` | Wall sockets, matching patch jacks, ONT and fixed interaction targets |
+| `ui/level_ui.gd` | Construction of level HUD, inventory, terminal, hub and pause widgets |
+| `ui/terminal/network_cli.gd` | Appliance CLI parser and commands |
+| `ui/pc_os/desktop.gd` | PC desktop and its Network/Terminal/Browser/System apps |
+| `ui/design_system.gd`, `ui/settings_panel.gd` | Shared theme and settings |
+| `missions/objectives.gd` | Declarative objective checks and rewards |
 
-Device configuration (IP, VLANs, routes...) lives in
-`GameState.device_configs[name]` and is persisted with the save.
+The scene still owns interaction/session registries. Builders receive that scene
+explicitly; its small forwarding methods retain the existing integration points.
+NetSim remains independent of render nodes. Changing a mesh must preserve its
+logical `(device, interface)` identity and the port position registry.
 
-To seed an initial infrastructure for a mission, append events to
-`GameState.events` before the level rebuilds visuals. See `STARTER_EVENTS` in
-`server_room.gd` for a working example.
+## Persistence and fixed infrastructure
 
-## NetSim: the network model
+`GameState.events` replays `place_device`, `add_link`, `remove_link`,
+`remove_device`; `ping_ok` records progress. Placement includes position, yaw and
+optional `supported` for tabletop equipment. Configurations live separately in
+`GameState.device_configs`, including host DHCP/static settings and NAT roles.
 
-Rebuilt from scratch after every change (topologies are small):
+`office_hosts_v1` is a one-time journal migration: existing saves gain the office
+hosts without duplicating their starter PC or resurrecting subsequently removed
+hosts. Monitor interaction uses the matching host name.
 
-```gdscript
-NetSim.rebuild(device_configs, NetSim.links_from_events(GameState.events))
+Fixed wall runs and the ONT are rebuilt deterministically before cable replay;
+they cannot be removed or configured as appliances. Each numbered wall jack is
+one independent passive run to the same numbered patch jack at the north wall
+of the network room. It preserves VLAN tags and needs continuity through both
+ends. It is not a switch joining neighbouring sockets. Player patch cords still
+use normal journal events. Decorative panels in movable racks remain decorative.
+
+The operator's hidden devices/links are merged into the NetSim snapshot, never
+into player-created journal entries. `_sync_netsim()` is the single synchronization
+point, followed by LED refresh and objective evaluation.
+
+## PC and appliance interfaces
+
+`T` on a PC/laptop or its office monitor opens the desktop. The Network form
+validates inputs before applying them atomically through `HostService.configure`.
+DHCP resolves an effective address and gateway; save files retain the DHCP intent.
+The PC terminal supports `ipconfig`, `ifconfig`, `ip addr`, `route`, `ping`,
+`tracert`/`traceroute`, `help`, `clear`. It does not expose IOS configuration modes.
+
+The browser is a simulated connectivity test, not a real HTTP client. Its built-in
+bookmark `connectivity.backbone.test` maps to `198.51.100.10` locally in the app;
+this is not DNS. IPv4 destinations can also be entered directly. Reachability is
+queried anew for every request.
+
+Switches/routers keep the existing CLI and modes. Add appliance commands in
+`ui/terminal/network_cli.gd`, register completion strings in `TERMINAL_COMMANDS`
+in the coordinator, and persist through `_save_device_config`. Add PC commands
+in `network/host_service.gd` and corresponding tests.
+
+## WAN exercise
+
+Connect a router's `eth0` to `WAN-ONT/client`, and its `eth1` to the LAN switch.
+A minimal router configuration is:
+
+```
+configure terminal
+interface eth0
+ip address dhcp
+no shutdown
+ip nat outside
+exit
+interface eth1
+ip address 192.168.10.1/24
+no shutdown
+ip nat inside
+exit
+ip nat overload
+ip route 0.0.0.0/0 203.0.113.1
+end
 ```
 
-Supported semantics: interface admin state and line protocol (cable + both
-ends up), IPv4 with CIDR, connected routes, static routes with longest prefix
-match, host default gateways, L2 switching with access VLANs, trunks (allowed
-lists, native VLAN 1), VLAN-aware flooding, forward and return path checks,
-loop detection, and DHCP (interfaces set to "dhcp" lease an address and a
-gateway from a pool served inside their L2 domain; see effective_address()).
+Give a LAN PC `192.168.10.20/24`, gateway `192.168.10.1`, then test
+`198.51.100.10`. Static WAN addressing in `203.0.113.0/24` is also supported;
+avoid `.1` (gateway), network/broadcast addresses and DHCP lease collisions.
 
-### Query API for objectives
+NAT translates sources only when a probe crosses an inside interface to an
+outside interface on an enabled router/firewall. NetSim checks the external
+return path and each reverse mapping. Mappings are scoped to one probe; there
+is no persistent TCP/UDP/PAT session simulation or unsolicited inbound mapping.
+`no ip nat overload` disables it; `no ip nat inside/outside` clears a role.
+
+## Extending equipment and scenarios
+
+Equipment data lives in `game/resources/equipment/devices.json`. Follow an existing entry,
+add interface names to `DeviceInterfaces.BY_CATEGORY`, and add its dimensions,
+body/port layout to `equipment_art.gd`. Keep physical jack transforms consistent
+with interaction positions. Update model/runtime port tests. New visual variants
+should reuse logical categories whenever possible.
+
+Scenario checks can query:
 
 ```gdscript
 NetSim.device_exists(name)
-NetSim.cable_connected(dev, iface)
-NetSim.interface_admin_up(dev, iface)
-NetSim.link_protocol_up(dev, iface)
-NetSim.ip_configured(dev, iface)
-NetSim.vlan_exists(dev, vlan_id)
-NetSim.port_in_vlan(dev, iface, vlan_id)
-NetSim.route_exists(dev, "10.0.0.0/24")
-NetSim.can_reach(src_dev, "10.0.0.2")
-NetSim.ping(src_dev, dst_ip)        # {success, reason, path, dst_dev}
-NetSim.traceroute(src_dev, dst_ip)
+NetSim.cable_connected(device, iface)
+NetSim.interface_admin_up(device, iface)
+NetSim.link_protocol_up(device, iface)
+NetSim.effective_address(device, iface)
+NetSim.effective_gateway(device)
+NetSim.port_in_vlan(device, iface, vlan)
+NetSim.route_exists(device, "0.0.0.0/0")
+NetSim.ping(device, "198.51.100.10") # success, reason, path, dst_dev
+NetSim.can_reach(device, "198.51.100.10")
 ```
 
-`ping()` failure reasons are stable strings ("no-route", "egress-down",
-"next-hop-unreachable", "no-return-path", ...) usable in mission feedback.
+`Objectives` checks the journal and model after changes. Add declarative checks
+there; do not infer success from a mesh colour or GUI label. No campaign was added.
 
-## Objectives
+## QA helpers and boundaries
 
-`objectives.gd` holds a declarative catalog: id, title, points, bcoins, and a
-`check` callable receiving the event journal. Checks may also query NetSim.
-`Objectives.evaluate()` runs after every event and every configuration change.
-Completed ids and score persist in the save. Adding a mission objective means
-appending an entry to the catalog (or, later, loading a catalog per scenario).
+`tools/verify.sh`: model, player clearance, host apps, level interactions, interior
+passages/ports/replay, WAN failure cases and actual GUI/CLI integration.
+`BACKBONE_VISUAL_TOUR=/absolute/existing/dir` captures the building and interfaces.
+`BACKBONE_WAN_TEST=1 BACKBONE_WAN_CAPTURES=/absolute/existing/dir` captures online
+and unplugged browser results. Helpers never write a user's save unless a test
+explicitly uses a unique disposable save name. Captures stay in ignored `artifacts/`.
 
-## Terminal
-
-The in-game CLI in `server_room.gd` follows a Cisco-like grammar with modes
-(exec, config, config-if, config-vlan). Every command reads or writes
-`_device_configs` then calls `_save_device_config()`, which persists and
-resyncs NetSim. Nothing in the terminal is cosmetic. To add a command: extend
-`_execute_terminal_command` dispatch and `TERMINAL_COMMANDS` (completion).
-
-Implemented: hostname, interface, ip address, no ip address, shutdown,
-no shutdown, description, ip route, no ip route, ip default-gateway, vlan,
-name, no vlan, switchport mode access|trunk, switchport access vlan,
-switchport trunk allowed vlan, ip address dhcp, ip dhcp pool, no ip dhcp
-pool, show running-config, show ip interface brief,
-show interfaces, show ip route, show vlan brief, ping, traceroute.
-
-## Tests
-
-```
-godot --headless --path game --script tests/test_network_sim.gd
-BACKBONE_SELFTEST=1 godot --headless --path game scenes/world/server_room.tscn
-```
-
-The first is a pure model suite. The second drives the full runtime (device
-placement, cabling, terminal commands, VLAN isolation, unplugging, objectives)
-and exits nonzero on failure.
-
-## Dev helpers
-
-Environment variables, inert in normal play:
-
-| var | effect |
-|---|---|
-| BACKBONE_SCREENSHOT=path.png | take a screenshot then quit |
-| BACKBONE_SHOT_POS / BACKBONE_SHOT_LOOK | "x,y,z" camera placement |
-| BACKBONE_SCREENSHOT_SETUP=func | call a setup method before the shot |
-| BACKBONE_SELFTEST=1 | run the end to end selftest |
-
-## Known limitations (candidates for future work)
-
-Not modeled yet: DNS, NAT, MAC address tables, spanning tree, wireless
-radio coverage (access points bridge their wired ports), tagged subinterfaces
-on routers. The NetSim rebuild-on-change design makes these straightforward to
-add without touching the level code.
-
-## ns-3 bridge
-
-`bridge/server.py` plus `engine/ns3/` remain available as an optional deep
-simulation backend (see README). Gameplay currently relies on NetSim, which
-covers VLANs and gateways that the ns-3 scenario format does not.
-
-## Interior art pass
-
-`world/interior_art.gd` builds architecture and decoration, independent of NetSim.
-It retains starter equipment coordinates and the event journal. Furniture uses
-shared materials and licensed Kenney GLBs; `docs/THIRD_PARTY_ASSETS.md` lists sources.
-`BACKBONE_INTERIOR_TEST=1 godot --headless --path game scenes/world/server_room.tscn`
-checks player capsule clearance through eight doors, glass collision, 33 ports
-across the starter switch and all equipment types (including rotated bodies),
-and tabletop placement with JSON replay.
-
-`equipment_art.gd` is the canonical metre-scale model factory used for equipment,
-held previews and inventory thumbnails. Switch/router chassis are 1U (44 mm),
-RJ45 shields 18 mm. Rack mounting keeps five-U service spacing between six
-available slots. `supported=true` on a placement event suppresses its folding
-stand when placed on a physical work surface. NetSim is unchanged.
-
-Static dressing and device details use material batches (MultiMesh); live port
-LEDs remain separate. Opaque walls act as occluders. Mobile Vulkan is the default
-renderer with 2x MSAA; two spot shadow lights provide local contact shadows.
-
-`BACKBONE_VISUAL_TOUR=/absolute/existing/directory` renders seven world views and
-five interfaces, reporting sampled FPS/draw counts. `BACKBONE_CATALOG_ICONS=dir`
-regenerates real-model thumbnails. `BACKBONE_MENU_SCREENSHOT=path.png` captures
-the menu; `BACKBONE_HIDE_HUD=1` hides HUD for the existing screenshot helper.
-Screenshots are stored locally in ignored `artifacts/`.
-
-`soundscape.gd` adds footsteps, UI/connector clicks and local rack fan ambience,
-through the existing Effects/Master buses. Original deterministic WAV assets can
-be regenerated with `python3 tools/generate_audio.py` (standard library only).
+Crouch is hold Ctrl; the capsule keeps its feet fixed and the camera transitions
+smoothly. Standing requires overhead clearance. No sprint existed in the baseline.
+Interior openings remain traversable; the exterior entry is a fixed level boundary.
+Old arbitrary saved placements may overlap new furnishings. DNS, STP, MAC tables
+and radio Wi-Fi remain future work. Optional `bridge/` + `engine/ns3/` are retained;
+gameplay and these tests rely on NetSim. Asset sources are in THIRD_PARTY_ASSETS.md.

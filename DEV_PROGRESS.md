@@ -1,11 +1,7 @@
-# Functional handover — 2026-09-11
-- Done: furnished glazed workplace; canonical metre-scale equipment/chamfered chassis/RJ45; real-model inventory icons; curved cables; shared UI theme; quiet foley/fans; tabletop placement/replay; precision view (right click).
-- Existing NetSim retained and extended for passive cabling, operator topology and probe-scoped NAT. Starter names retained. External furniture is Kenney CC0 (docs/THIRD_PARTY_ASSETS.md).
-- Tested: Godot Flatpak 4.7.2, 28 model + 13 runtime checks; interior suite: 8 capsule passages, glass collision, 33 individual port rays, tabletop placement/JSON replay. Import and diff checks clean.
-- Rendering: Mobile Vulkan + 2x MSAA, material batches and wall occlusion. Seven 1080p views sampled 52–61 FPS on Quadro K2100M; not a long-duration benchmark.
-- Functional pass P1: crouch + clearance test implemented; desk/chair/sign/TV/socket corrections; fixed wall-to-patch passive runs now in NetSim. Validated: 30 network tests, 13 runtime checks, player clearance and interior suites.
-- PC desktop integrated: real IP/DHCP form, host terminal, simulated connectivity browser, seven office monitors bound to journaled hosts. 11 host-service checks + runtime suite pass, real GUI renders reviewed.
-- WAN implemented: real ONT handoff, operator DHCP, 198.51.100.10 service, inside/outside NAT and return validation. 15 model cases + real GUI/CLI/unplug/save-state/25 connector runtime checks pass.
-- Next: focused refactor/docs, final world QA and v0.5.0-alpha per RELEASING.md.
-- Git: custom-cli pushed through P1; existing SemVer alpha workflow retained; no LFS in this repo.
-- Limitations: old arbitrary user placements may intersect new partitions; fixed wall jacks now connect to numbered patch ports. Radio Wi-Fi, DNS/STP remain unimplemented. NAT models probe responses, not TCP/UDP sessions.
+# Handover — 2026-09-11 — custom-cli
+- Done: visual pass retained; Ctrl crouch with clearance; mounted sockets and independent passive patch runs; desk/TV/sign placement corrections; real PC desktop with network form, host terminal and connectivity browser; functional ONT/operator DHCP/NAT.
+- Cleanup: building.gd, level_ui.gd and terminal/network_cli.gd extracted; coordinator reduced to ~1,800 lines. Dead helpers removed. docs/ARCHITECTURE.md covers extension points and a working WAN configuration.
+- Tested: 33 network cases, 6 player checks, 11 host-app checks, 15 WAN model cases, 13 runtime checks; 8 passages, 33 equipment ports, 25 fixed ports; actual GUI/CLI WAN path and disposable disk save/new-scene restore. See tools/verify.sh.
+- Current: final QA screenshots after shelf-scale/conduit alignment fixes; release preparation v0.5.0-alpha, following existing RELEASING.md.
+- Git: stable P1/PC/WAN blocks pushed to origin/custom-cli. Refactor/cleanup being finalized; no force push or LFS changes.
+- Limits: exterior door is a level boundary; movable-rack decorative panels are not the functional wall patch panel. Old arbitrary placements can overlap furnishings. DNS/STP/radio Wi-Fi absent; NAT is probe-scoped, not TCP/UDP sessions.

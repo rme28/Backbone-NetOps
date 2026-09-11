@@ -86,10 +86,10 @@ func build() -> void:
 	prop("coatRackStanding", Vector3(-9.2, 0, 2.8), 0, 1.7)
 	# South-west staging area for future deployments.
 	workbench(Vector3(-7.5, 0, 7.9))
-	prop("bookcaseOpen", Vector3(-9.3, 0, 5.7), PI / 2, 1.8)
+	prop("bookcaseOpen", Vector3(-9.3, 0, 5.7), PI / 2, 1.09)
 	for z in [5.3, 6.2, 7.2]: prop("cardboardBoxClosed", Vector3(-8.7, 0, z), z, 0.7)
 	room._add_plant(Vector3(-3.0, 0, 8.7))
-	room._add_signage(Vector3(-6.5, 2.1, 9.82), "STAGING / DEPLOYMENT", Color("bfe4df"), PI)
+	room._add_signage(Vector3(-6.5, 2.1, 9.885), "STAGING / DEPLOYMENT", Color("bfe4df"), PI)
 	# Baseboards and pilasters break long flat walls.
 	for x in [-9.85, 9.85]:
 		box(Vector3(x, 0.09, -5.8), Vector3(0.08, 0.18, 8.2), "trim")

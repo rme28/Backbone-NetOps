@@ -14,6 +14,10 @@ func run(room: Node3D) -> void:
 	room._open_terminal("QA-CPE")
 	for command in ["configure terminal","interface eth0","ip address dhcp","no shutdown","ip nat outside","exit","interface eth1","ip address 192.168.10.1/24","no shutdown","ip nat inside","exit","ip nat overload","ip route 0.0.0.0/0 203.0.113.1","end"]:
 		room._execute_terminal_command(command)
+	var config_before := JSON.stringify(room._device_configs["QA-CPE"])
+	for command in ["configure terminal","ip route 1.2.3.4/99 203.0.113.1","interface eth0","ip address 999.1.2.3/24","end"]:
+		room._execute_terminal_command(command)
+	check(JSON.stringify(room._device_configs["QA-CPE"]) == config_before,"invalid CLI configuration is atomic")
 	room._close_terminal()
 	room._open_terminal("QA-PC")
 	check(room._pc_os.visible and not room._terminal_layer.visible,"PC opens desktop, not IOS")
@@ -61,5 +65,25 @@ func run(room: Node3D) -> void:
 			if child is Button: child.pressed.emit()
 		await RenderingServer.frame_post_draw
 		room.get_viewport().get_texture().get_image().save_png(directory.path_join("16-browser-offline.png"))
+	room._close_terminal()
+	if not NetSim.cable_connected("WAN-ONT","client"): room._create_link("QA-CPE","WAN-ONT","eth0","client")
+	var save_name := "qa-disposable-%s-%s" % [OS.get_process_id(),Time.get_ticks_usec()]
+	GameState.save_name = save_name
+	check(GameState.save(),"write disposable save")
+	GameState.device_configs.clear()
+	GameState.events.clear()
+	check(GameState.load_from(save_name),"read disposable save")
+	OS.set_environment("BACKBONE_WAN_TEST","")
+	OS.set_environment("BACKBONE_WAN_CAPTURES","")
+	var restored = load("res://scenes/world/server_room.tscn").instantiate()
+	room.get_tree().root.add_child(restored)
+	restored._player.set_active(false)
+	await room.get_tree().physics_frame
+	check(NetSim.can_reach("QA-PC","198.51.100.10"),"fresh scene replay restores WAN reachability")
+	check(restored._used_interfaces.get("WAN-ONT",[]).has("client"),"fresh scene restores ONT cable usage")
+	check(restored._cable_nodes.size() >= 2,"fresh scene restores physical cables")
+	GameState.delete_save(save_name)
+	restored.queue_free()
+	await room.get_tree().process_frame
 	print("WAN-RUNTIME failures=",failures)
 	room.get_tree().quit(0 if failures.is_empty() else 1)

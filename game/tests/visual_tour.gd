@@ -2,6 +2,7 @@ extends RefCounted
 ## Deterministic real-renderer QA, no user save writes. Output directory must exist.
 func run(room: Node3D, directory: String) -> void:
 	room._player.set_active(false)
+	room._held_root.visible = false
 	var camera: Camera3D = room._player.get_node("Camera3D")
 	var shots := [
 		["01-concourse", Vector3(0, 1, 4), Vector3(0, 1.6, -7)],
@@ -10,6 +11,11 @@ func run(room: Node3D, directory: String) -> void:
 		["04-reception", Vector3(9, 1, 15), Vector3(5.5, 1.1, 19.3)],
 		["05-breakroom", Vector3(11.2, 1, 2.8), Vector3(14.3, 1.1, -2)],
 		["06-meeting", Vector3(4.4, 1, 2.7), Vector3(7, 1.0, 6)],
+		["17-operator", Vector3(-10.7,1,12), Vector3(-14.25,1.4,12)],
+		["18-staging", Vector3(-3.8,1,5.4), Vector3(-7.5,1,8)],
+		["19-operations", Vector3(3.0,1,-5.4), Vector3(6.5,1,-8.7)],
+		["20-corridor", Vector3(2,1,11.7), Vector3(-9,1.7,12.5)],
+		["21-patch-panel", Vector3(-8.9,0.75,-8.9), Vector3(-8.86,1.3,-9.88)],
 		["07-technician", Vector3(0.6, 1, -5.4), Vector3(0, 1.2, -7.2)],
 	]
 	for shot in shots:

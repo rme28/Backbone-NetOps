@@ -102,7 +102,7 @@ func show_app(selected: String) -> void:
 		_: label("Votre poste de travail\n\nConfigurez Ethernet dans Réseau, puis vérifiez une destination depuis le terminal ou le navigateur.")
 
 func network_app() -> void:
-	label(service.network_info(device))
+	var summary := label(service.network_info(device))
 	var config: Dictionary = service.configs[device]
 	var selector := OptionButton.new()
 	for name_ in config.interfaces: selector.add_item(name_)
@@ -127,7 +127,8 @@ func network_app() -> void:
 	load_interface.call(0)
 	var status := label("")
 	button(content,"Appliquer",func():
-		status.text = service.configure(device,selector.get_item_text(selector.selected),mode.button_pressed,address.text.strip_edges(),prefix.text.strip_edges(),gateway.text.strip_edges())+"\n"+service.network_info(device)
+		status.text = service.configure(device,selector.get_item_text(selector.selected),mode.button_pressed,address.text.strip_edges(),prefix.text.strip_edges(),gateway.text.strip_edges())
+		summary.text = service.network_info(device)
 	)
 
 func terminal_app() -> void:

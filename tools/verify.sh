@@ -9,11 +9,18 @@ elif command -v godot4 >/dev/null 2>&1; then
 else
     godot_command=(flatpak run org.godotengine.Godot)
 fi
-"${godot_command[@]}" --headless --path game --script tests/test_network_sim.gd
-"${godot_command[@]}" --headless --path game --script tests/test_player.gd
-"${godot_command[@]}" --headless --path game --script tests/test_host_service.gd
-BACKBONE_SELFTEST=1 timeout 30 "${godot_command[@]}" --headless --path game scenes/world/server_room.tscn
-BACKBONE_INTERIOR_TEST=1 timeout 30 "${godot_command[@]}" --headless --path game scenes/world/server_room.tscn
-
-"${godot_command[@]}" --headless --path game --script tests/test_wan.gd
-BACKBONE_WAN_TEST=1 timeout 30 "${godot_command[@]}" --headless --path game scenes/world/server_room.tscn
+check_log="$(mktemp)"
+trap 'rm -f "$check_log"' EXIT
+run_check() {
+    local result=0
+    timeout 45 "$@" > "$check_log" 2>&1 || result=$?
+    cat "$check_log"
+    if (( result != 0 )); then return "$result"; fi
+    if rg -q 'SCRIPT ERROR|^ERROR:|FAILED|  FAIL ' "$check_log"; then return 1; fi
+}
+for suite in test_network_sim test_player test_host_service test_wan; do
+    run_check "${godot_command[@]}" --headless --path game --script "tests/$suite.gd"
+done
+for suite in BACKBONE_SELFTEST BACKBONE_INTERIOR_TEST BACKBONE_WAN_TEST; do
+    run_check env "$suite=1" "${godot_command[@]}" --headless --path game scenes/world/server_room.tscn
+done

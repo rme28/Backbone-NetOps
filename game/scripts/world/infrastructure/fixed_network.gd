@@ -10,6 +10,12 @@ func _init(host: Node3D) -> void:
 	room = host
 
 func outlet(pos: Vector3, yaw: float) -> void:
+	if count == 0:
+		var panel := Node3D.new()
+		room.add_child(panel)
+		panel.position = Vector3(-8.8625,1.34,-9.89)
+		room._equipment_art.chassis(panel,Vector3.ZERO,Vector3(0.30,0.24,0.02),room._material(Color("273b43")),0.005)
+		room._equipment_art.text(panel,"BRASSAGE / CAT 6",Vector3(0,0.1,0.012),0.00035)
 	var plate := Node3D.new()
 	room.add_child(plate)
 	plate.position = pos
@@ -24,7 +30,7 @@ func outlet(pos: Vector3, yaw: float) -> void:
 		port(plate,Vector3(x,0,0.006),device,"wall",str(count))
 		var patch := Node3D.new()
 		room.add_child(patch)
-		patch.position = Vector3(-8.95 + ((count-1)%6)*0.035, 1.3 + ((count-1)/6)*0.08, -9.885)
+		patch.position = Vector3(-8.95 + ((count-1)%6)*0.035, 1.3 + ((count-1)/6)*0.08, -9.87)
 		room._equipment_art.chassis(patch,Vector3(0,0,-0.005),Vector3(0.035,0.065,0.025),room._material(Color("273b43")),0.002)
 		port(patch,Vector3(0,0,0.013),device,"patch",str(count))
 

@@ -46,6 +46,15 @@ func run() -> void:
 	await physics_frame
 	player.update_stance(false, 0.2)
 	check(not player.crouched and is_equal_approx(player.camera.position.y, 0.6), "stand after clearing obstacle")
+	player.position = Vector3(0,0.91,0)
+	Input.action_press("move_forward")
+	player._physics_process(0.02)
+	var standing_speed: float = absf(player.velocity.z)
+	Input.action_press("crouch")
+	player._physics_process(0.02)
+	check(absf(player.velocity.z) < standing_speed and player.position.z < 0,"movement slows while crouched")
+	Input.action_release("move_forward")
+	Input.action_release("crouch")
 	check(InputMap.has_action("crouch"), "input action registered")
 	world.queue_free()
 	await process_frame
