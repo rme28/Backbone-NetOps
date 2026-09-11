@@ -122,6 +122,20 @@ func _run_dev_screenshot(path: String) -> void:
 	var setup_script := OS.get_environment("BACKBONE_SCREENSHOT_SETUP")
 	if not setup_script.is_empty() and has_method(setup_script):
 		call(setup_script)
+	# Position/cible de camera optionnelles : BACKBONE_SHOT_POS="x,y,z"
+	# et BACKBONE_SHOT_LOOK="x,y,z" pour cadrer sans fonction dediee.
+	var pos_env := OS.get_environment("BACKBONE_SHOT_POS")
+	var look_env := OS.get_environment("BACKBONE_SHOT_LOOK")
+	if not pos_env.is_empty():
+		var p := pos_env.split_floats(",")
+		if p.size() == 3:
+			_player.global_position = Vector3(p[0], p[1], p[2])
+		if not look_env.is_empty():
+			var l := look_env.split_floats(",")
+			if l.size() == 3:
+				_player.look_at(Vector3(l[0], l[1], l[2]), Vector3.UP)
+				var camera: Camera3D = _player.get_node("Camera3D")
+				camera.look_at(Vector3(l[0], l[1], l[2]), Vector3.UP)
 	await get_tree().create_timer(1.2).timeout
 	var image := get_viewport().get_texture().get_image()
 	image.save_png(path)
@@ -160,7 +174,10 @@ func _build_room() -> void:
 
 	_add_box(Vector3(0, -0.1, 0), Vector3(20, 0.2, 20), floor_mat)  # sol
 	_add_box(Vector3(0, 1.5, -10), Vector3(20, 3, 0.2), wall_mat)   # mur nord
-	_add_box(Vector3(0, 1.5, 10), Vector3(20, 3, 0.2), wall_mat)    # mur sud
+	# Mur sud perce d'une porte vers le couloir de l'aile bureaux.
+	_add_box(Vector3(-5.6, 1.5, 10), Vector3(8.8, 3, 0.2), wall_mat)
+	_add_box(Vector3(5.6, 1.5, 10), Vector3(8.8, 3, 0.2), wall_mat)
+	_add_signage(Vector3(0, 2.55, 10.15), "SALLE SERVEUR", Color("7dd8ff"))
 	# Mur est perce d'une porte (2 segments) vers l'annexe pause/bureau.
 	_add_box(Vector3(10, 1.5, -5.75), Vector3(0.2, 3, 8.5), wall_mat)
 	_add_box(Vector3(10, 1.5, 5.75), Vector3(0.2, 3, 8.5), wall_mat)
@@ -168,6 +185,7 @@ func _build_room() -> void:
 	_add_visual_box(Vector3(0, 3.05, 0), Vector3(20, 0.1, 20), ceiling_mat)
 
 	_build_annex_room(wall_mat, ceiling_mat)
+	_build_south_wing(wall_mat, ceiling_mat)
 
 	# Dalles et joints du faux plancher.
 	var grid_mat := _material(Color("3a464b"), 0.75, 0.25)
@@ -287,6 +305,165 @@ func _build_annex_room(wall_mat: Material, ceiling_mat: Material) -> void:
 	label.no_depth_test = true
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	add_child(label)
+
+
+## Aile sud du batiment : couloir, open-space bureaux, accueil et local
+## technique operateur (arrivee WAN). Chaque zone est construite par une
+## fonction dediee avec des coordonnees regroupees, pour rester facilement
+## deplacable / modifiable par un futur developpeur de scenarios.
+func _build_south_wing(wall_mat: Material, ceiling_mat: Material) -> void:
+	var corridor_floor := _material(Color("262c31"), 0.8, 0.1)
+	var office_floor := _material(Color("3f4440"), 0.9, 0.0)
+	var closet_floor := _material(Color("2b2926"), 0.9, 0.0)
+
+	# --- Couloir (x -10..10, z 10..13.6) ---
+	_add_box(Vector3(0, -0.1, 11.8), Vector3(20, 0.2, 3.6), corridor_floor)
+	_add_visual_box(Vector3(0, 3.05, 11.8), Vector3(20, 0.1, 3.6), ceiling_mat)
+	# Mur sud du couloir : ouvertures vers bureaux (x -5.2..-2.8) et accueil (x 3..8).
+	_add_box(Vector3(-7.6, 1.5, 13.6), Vector3(4.8, 3, 0.2), wall_mat)
+	_add_box(Vector3(0.1, 1.5, 13.6), Vector3(5.8, 3, 0.2), wall_mat)
+	_add_box(Vector3(9.0, 1.5, 13.6), Vector3(2.0, 3, 0.2), wall_mat)
+	_add_zone_light(Vector3(-5, 2.75, 11.8), Color("fff1dc"), 1.8, 8.0)
+	_add_zone_light(Vector3(5, 2.75, 11.8), Color("fff1dc"), 1.8, 8.0)
+	_add_zone_light(Vector3(0, 2.75, 11.8), Color("fff1dc"), 1.6, 7.0)
+	_add_signage(Vector3(-4, 2.5, 13.45), "BUREAUX", Color("e8e2d0"), PI)
+	_add_signage(Vector3(5.5, 2.5, 13.45), "ACCUEIL", Color("e8e2d0"), PI)
+
+	# --- Open-space bureaux (x -10..3, z 13.6..21.2) ---
+	_add_box(Vector3(-3.5, -0.1, 17.4), Vector3(13, 0.2, 7.6), office_floor)
+	_add_visual_box(Vector3(-3.5, 3.05, 17.4), Vector3(13, 0.1, 7.6), ceiling_mat)
+	_add_box(Vector3(3, 1.5, 17.4), Vector3(0.2, 3, 7.6), wall_mat)  # cloison accueil
+	_add_zone_light(Vector3(-6, 2.75, 17.4), Color("f4f8ff"), 1.8, 8.0)
+	_add_zone_light(Vector3(-1, 2.75, 17.4), Color("f4f8ff"), 1.8, 8.0)
+	for desk_x in [-7.5, -4.5]:
+		_build_office_desk(Vector3(desk_x, 0, 16.2), 0.0)
+		_build_office_desk(Vector3(desk_x, 0, 19.2), PI)
+	for outlet_x in [-8.0, -6.0, -3.0, 0.0]:
+		_add_wall_outlet(Vector3(outlet_x, 0.35, 13.72))
+	_add_plant(Vector3(1.8, 0, 20.2))
+
+	# --- Accueil (x 3..10, z 13.6..21.2) ---
+	_add_box(Vector3(6.5, -0.1, 17.4), Vector3(7, 0.2, 7.6), office_floor)
+	_add_visual_box(Vector3(6.5, 3.05, 17.4), Vector3(7, 0.1, 7.6), ceiling_mat)
+	_add_zone_light(Vector3(6.5, 2.75, 17.4), Color("ffedd6"), 1.8, 8.0)
+	_build_reception_desk(Vector3(5.6, 0, 16.6))
+	_add_plant(Vector3(9.2, 0, 14.6))
+	_add_signage(Vector3(6.5, 2.3, 20.9), "BACKBONE CORP", Color("7dd8ff"), PI)
+	# Porte d'entree (decor) sur le mur sud.
+	var door_mat := _material(Color("1b2226"), 0.4, 0.4)
+	_add_visual_box(Vector3(7.5, 1.25, 21.08), Vector3(2.2, 2.5, 0.08), door_mat)
+	_add_signage(Vector3(7.5, 2.62, 21.0), "ENTREE", Color("9adf9a"), PI)
+
+	# --- Murs exterieurs de l'aile ---
+	_add_box(Vector3(0, 1.5, 21.2), Vector3(20, 3, 0.2), wall_mat)              # sud
+	_add_box(Vector3(10, 1.5, 15.6), Vector3(0.2, 3, 11.2), wall_mat)           # est
+	_add_box(Vector3(-10, 1.5, 10.5), Vector3(0.2, 3, 1.0), wall_mat)           # ouest (haut)
+	_add_box(Vector3(-10, 1.5, 17.3), Vector3(0.2, 3, 7.8), wall_mat)           # ouest (bas)
+
+	# --- Local technique / arrivee WAN (x -14.4..-10, z 10..14) ---
+	_add_box(Vector3(-12.2, -0.1, 12), Vector3(4.4, 0.2, 4), closet_floor)
+	_add_visual_box(Vector3(-12.2, 3.05, 12), Vector3(4.4, 0.1, 4), ceiling_mat)
+	_add_box(Vector3(-14.4, 1.5, 12), Vector3(0.2, 3, 4), wall_mat)
+	_add_box(Vector3(-12.2, 1.5, 10), Vector3(4.4, 3, 0.2), wall_mat)
+	_add_box(Vector3(-12.2, 1.5, 14), Vector3(4.4, 3, 0.2), wall_mat)
+	_add_zone_light(Vector3(-12.2, 2.7, 12), Color("dceaf2"), 1.5, 6.0)
+	_add_signage(Vector3(-9.85, 2.5, 12), "LOCAL TECHNIQUE", Color("ffd166"), PI / 2.0)
+	# Boitier operateur + conduits (decor : le point d'entree WAN du batiment).
+	var box_mat := _material(Color("4a5258"), 0.5, 0.3, true)
+	_add_visual_box(Vector3(-14.2, 1.4, 12), Vector3(0.3, 0.9, 0.7), box_mat)
+	_add_signage(Vector3(-14.0, 2.05, 12), "ARRIVEE OPERATEUR (WAN)", Color("9adf9a"), PI / 2.0)
+	var conduit := _material(Color("35434a"), 0.35, 0.65)
+	_add_visual_box(Vector3(-14.25, 2.5, 12), Vector3(0.12, 1.3, 0.12), conduit)
+	_add_visual_box(Vector3(-12.2, 2.88, 12), Vector3(4.2, 0.1, 0.14), conduit)
+
+
+## Panneau de signalisation mural (texte fixe oriente, pas de billboard).
+func _add_signage(pos: Vector3, text: String, color: Color, yaw := 0.0) -> void:
+	var label := Label3D.new()
+	label.text = text
+	label.position = pos
+	label.rotation.y = yaw
+	label.font_size = 40
+	label.pixel_size = 0.004
+	label.modulate = color
+	label.outline_size = 4
+	label.double_sided = false
+	add_child(label)
+
+
+func _add_zone_light(pos: Vector3, color: Color, energy: float, range_m: float) -> void:
+	var lamp_mat := _material(Color("f5efe2"), 0.3, 0.0, false, color, 2.0)
+	_add_visual_box(Vector3(pos.x, 2.96, pos.z), Vector3(1.6, 0.04, 0.4), lamp_mat)
+	var lamp := OmniLight3D.new()
+	lamp.position = pos
+	lamp.light_color = color
+	lamp.light_energy = energy
+	lamp.omni_range = range_m
+	add_child(lamp)
+
+
+## Bureau d'open-space (decor) : plateau, pietement, ecran et chaise Kenney.
+func _build_office_desk(pos: Vector3, yaw: float) -> void:
+	var desk := StaticBody3D.new()
+	desk.position = pos
+	desk.rotation.y = yaw
+	add_child(desk)
+	var top_mat := _material(Color("6a6156"), 0.6, 0.1, true)
+	var leg_mat := _material(Color("2c3134"), 0.4, 0.5)
+	_add_local_box(desk, Vector3(0, 0.74, 0), Vector3(1.6, 0.06, 0.8), top_mat)
+	for x in [-0.72, 0.72]:
+		_add_local_box(desk, Vector3(x, 0.37, 0), Vector3(0.06, 0.74, 0.7), leg_mat)
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(1.6, 0.8, 0.8)
+	col.shape = shape
+	col.position = Vector3(0, 0.4, 0)
+	desk.add_child(col)
+	# Moniteur + clavier (decor).
+	var screen_mat := _material(Color("10222c"), 0.3, 0.0, false, Color("1a5a7a"), 1.2)
+	_add_local_box(desk, Vector3(0, 1.02, -0.2), Vector3(0.55, 0.34, 0.03), _material(Color("14181b"), 0.4, 0.4))
+	_add_local_box(desk, Vector3(0, 1.02, -0.185), Vector3(0.5, 0.29, 0.012), screen_mat)
+	_add_local_box(desk, Vector3(0, 0.79, -0.2), Vector3(0.06, 0.04, 0.06), leg_mat)
+	_add_local_box(desk, Vector3(0, 0.78, 0.1), Vector3(0.42, 0.02, 0.14), leg_mat)
+	if _spawn_kenney_prop("furniture/chair.glb", pos + Vector3(0, 0, 0.7).rotated(Vector3.UP, yaw), yaw + PI) == null:
+		pass
+
+
+func _build_reception_desk(pos: Vector3) -> void:
+	var counter := _material(Color("4d5a63"), 0.5, 0.2, true)
+	var front := _material(Color("22303a"), 0.6, 0.1)
+	_add_box(pos + Vector3(0, 0.55, 0), Vector3(2.4, 1.1, 0.5), front)
+	_add_visual_box(pos + Vector3(0, 1.12, 0), Vector3(2.6, 0.05, 0.7), counter)
+	_add_box(pos + Vector3(1.45, 0.55, 0.85), Vector3(0.5, 1.1, 1.6), front)
+	_add_visual_box(pos + Vector3(1.45, 1.12, 0.85), Vector3(0.7, 0.05, 1.8), counter)
+
+
+func _add_wall_outlet(pos: Vector3) -> void:
+	var plate := _material(Color("d8dde0"), 0.5, 0.05)
+	_add_visual_box(pos, Vector3(0.16, 0.1, 0.03), plate)
+	var hole := _material(Color("1a1e21"), 0.5)
+	_add_visual_box(pos + Vector3(-0.035, 0, 0.014), Vector3(0.045, 0.04, 0.01), hole)
+	_add_visual_box(pos + Vector3(0.035, 0, 0.014), Vector3(0.045, 0.04, 0.01), hole)
+
+
+func _add_plant(pos: Vector3) -> void:
+	var pot := MeshInstance3D.new()
+	var pot_mesh := CylinderMesh.new()
+	pot_mesh.height = 0.35
+	pot_mesh.top_radius = 0.22
+	pot_mesh.bottom_radius = 0.17
+	pot_mesh.material = _material(Color("5a4a3a"), 0.7)
+	pot.mesh = pot_mesh
+	pot.position = pos + Vector3(0, 0.175, 0)
+	add_child(pot)
+	var leaves := MeshInstance3D.new()
+	var leaves_mesh := SphereMesh.new()
+	leaves_mesh.radius = 0.38
+	leaves_mesh.height = 0.85
+	leaves_mesh.material = _material(Color("3f6f3f"), 0.85)
+	leaves.mesh = leaves_mesh
+	leaves.position = pos + Vector3(0, 0.75, 0)
+	add_child(leaves)
 
 
 var _material_cache: Dictionary = {}  # cle -> StandardMaterial3D, evite de regenerer les textures de bruit
@@ -470,8 +647,9 @@ func _build_held_item() -> void:
 	_held_root = Node3D.new()
 	_held_root.name = "HeldItem"
 	cam.add_child(_held_root)
-	_held_root.position = Vector3(0.34, -0.27, -0.62)
+	_held_root.position = Vector3(0.42, -0.34, -0.85)
 	_held_root.rotation_degrees = Vector3(7, -24, 4)
+	_held_root.scale = Vector3.ONE * 0.55
 	_update_held_item()
 
 
