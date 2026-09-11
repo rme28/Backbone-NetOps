@@ -1,6 +1,8 @@
 name: Publish alpha release
 on:
   push:
+    branches: ['custom-cli']
+    paths: ['.github/workflows/release.yml']
     tags:
       - 'v*-alpha'
 permissions:
@@ -13,7 +15,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'v0.5.0-alpha' }}
         run: |
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Release already published."
