@@ -6,7 +6,15 @@ Versions follow SemVer with an alpha pre-release channel until the project reach
 
 ## [Unreleased]
 
+## [0.5.0-alpha] - 2026-09-11
+
 ### Added
+
+- Hold-Ctrl crouch with smooth eye height, reduced movement speed and blocked standing under obstacles
+- PC desktop with real static/DHCP network settings, host terminal commands and a simulated connectivity browser; office monitors bound to journaled hosts
+- Functional, numbered wall-to-patch runs preserving VLAN tags and physical carrier continuity
+- Operator ONT, DHCP handoff on 203.0.113.0/24 and external service at 198.51.100.10; source NAT for simulated probes with return-path checks
+- Player, host, WAN, GUI/CLI and disposable-save/fresh-scene regression suites
 
 - Workplace art pass: glazed server/operations rooms, meeting area, staging benches, window bays, furnished offices, reception and kitchenette
 - Consistent metre-scale equipment with chamfered enclosures, 18 mm RJ45 connectors, numbered ports and shared inventory thumbnails
@@ -31,6 +39,9 @@ Versions follow SemVer with an alpha pre-release channel until the project reach
 
 ### Changed
 
+- Building generation, UI builders and appliance CLI extracted from the scene coordinator into focused modules
+- Developer architecture guide includes equipment/command extension points, PC apps, fixed cabling and a working WAN exercise
+
 - Mobile Vulkan renderer, 2x MSAA, spatial static batching and wall occlusion; sampled 52–61 FPS at 1080p on the tested Quadro K2100M
 - Decorative furniture is consistently scaled and uses a shared material palette; prominent fixtures no longer overexpose
 
@@ -39,6 +50,10 @@ Versions follow SemVer with an alpha pre-release channel until the project reach
 - Signage, lighting, and layout polish across the facility
 
 ### Fixed
+
+- Wall socket mounting, meeting chair orientation, TV face, supported signs, shelf scale and operator conduit alignment
+- DHCP pools cannot allocate outside small subnets or serve a different router interface subnet
+- Invalid IPv4/CIDR configuration is rejected before mutation; Escape closes settings before resuming play
 
 - Terminal auto refresh dead code removed
 - Racked and unplugged interface bookkeeping stays consistent after save replay
@@ -118,7 +133,8 @@ Versions follow SemVer with an alpha pre-release channel until the project reach
 - First-person movement
 - Initial equipment placement
 
-[Unreleased]: https://github.com/rme28/Backbone-NetOps/compare/v0.4.0-alpha...HEAD
+[Unreleased]: https://github.com/rme28/Backbone-NetOps/compare/v0.5.0-alpha...HEAD
+[0.5.0-alpha]: https://github.com/rme28/Backbone-NetOps/compare/v0.4.0-alpha...v0.5.0-alpha
 [0.4.0-alpha]: https://github.com/rme28/Backbone-NetOps/compare/v0.3.0-alpha...v0.4.0-alpha
 [0.3.0-alpha]: https://github.com/rme28/Backbone-NetOps/compare/v0.2.0-alpha...v0.3.0-alpha
 [0.2.0-alpha]: https://github.com/rme28/Backbone-NetOps/compare/v0.1.0-alpha...v0.2.0-alpha

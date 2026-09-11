@@ -2,14 +2,17 @@
 
 **The ultimate network engineer simulator.**
 
-Backbone NetOps is a 3D first-person network simulation game built with Godot 4. Walk through a small company building, install equipment, connect exact ports, configure devices from a realistic command line, and build a working infrastructure. Every command and every cable affects a real logical network model: what should not work, does not work, for an understandable reason.
+Backbone NetOps is a 3D first-person network simulation game built with Godot 4. Walk through a small company building, install equipment, connect exact ports, configure PCs from a small desktop and network appliances from a command line, and build a working infrastructure. Every command and every cable affects a real logical network model: what should not work, does not work, for an understandable reason.
 
 The project runs locally without virtual machines, containers, paid services, or proprietary network software.
 
-## Current Status: Alpha 0.5.0 (development)
+## Current Status: v0.5.0-alpha
 
 The project is an early playable alpha. The current version includes:
 
+- Hold Ctrl to crouch; overhead obstacles prevent standing up
+- PC desktop with DHCP/static settings, host terminal and connectivity browser
+- Functional wall-to-patch cabling and operator WAN with DHCP and source NAT for simulated probes
 - A furnished workplace with glazed partitions, meeting and staging areas, textured materials, shared UI styling and real-model inventory thumbnails
 - Metre-scale equipment, numbered RJ45 sockets, curved cables, tabletop placement and subtle spatial sound
 - A first-person company building: server room, corridor, open space offices, reception, entrance, break room, and a technical closet with the operator WAN entry
@@ -139,3 +142,11 @@ Common abbreviations such as `sh run`, `conf t`, `int eth0`, and `ip add` are su
 Versions follow SemVer and use the `vX.Y.Z-alpha` format until the project reaches a more stable stage.
 
 See [CHANGELOG.md](CHANGELOG.md) for the version history and [RELEASING.md](RELEASING.md) for the release process.
+
+## Functional QA and WAN setup
+
+Run `./tools/verify.sh` from the repository root. The suites cover model behavior, crouch, host apps, WAN failures, actual GUI/CLI integration, physical port access and disposable disk-save replay.
+
+Press **T** on a PC or its office monitor to open Backbone Desktop. Appliance terminals remain available on switches and routers. The built-in browser bookmark `connectivity.backbone.test` targets a simulated service, not the real Internet.
+
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md#wan-exercise) for the ONT/LAN wiring and complete router configuration. NAT covers simulated reachability probes; DNS, TCP/UDP session state, STP and radio Wi-Fi are not modeled.

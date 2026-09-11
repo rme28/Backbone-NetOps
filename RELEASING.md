@@ -25,12 +25,12 @@ frozen, bug hunting) -> `rc` (release candidate) -> final version with no suffix
    ```bash
    git tag -a vX.Y.Z-channel -m "Title" -m "Details..."
    ```
-4. **Push the commit and the tag**:
+4. **Push the commit and the tag** (the current development/release branch is `custom-cli`; do not rewrite `master`):
    ```bash
-   git push origin master
+   git push origin custom-cli
    git push origin vX.Y.Z-channel
    ```
-5. **Create the GitHub Release** from the tag:
+5. **GitHub Actions publishes alpha releases automatically** from `v*-alpha` tag pushes using `.github/workflows/release.yml`. It uses the job-scoped repository token; no personal token is required. Verify the workflow and the Releases page. For manual publication or other channels:
    - **Web option** (no tooling required): on
      `https://github.com/rme28/Backbone-NetOps/releases` -> *Draft a new release*
      -> pick the tag `vX.Y.Z-channel` -> GitHub pre-fills the tag message

@@ -1,0 +1,25 @@
+name: Publish alpha release
+on:
+  push:
+    tags:
+      - 'v*-alpha'
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish tagged prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release already published."
+            exit 0
+          fi
+          gh release create "$RELEASE_TAG" --verify-tag --prerelease \
+            --title "Backbone NetOps $RELEASE_TAG" \
+            --notes "PC desktop and real network configuration, functional operator WAN and probe NAT, safe crouching, world QA and code cleanup. See CHANGELOG.md and docs/ARCHITECTURE.md in the tagged source for details and the WAN setup guide." \
+            --generate-notes
