@@ -30,7 +30,7 @@ const STARTER_EVENTS := [
 	{"type": "place_device", "name": "SW-CORE", "model": "switch_l2", "category": "switch",
 		"world_pos": [-6.0, 0.2, -8.6], "world_yaw": 0.0},
 	{"type": "place_device", "name": "PC-BUREAU1", "model": "desktop", "category": "pc",
-		"world_pos": [-7.5, 0.41, 15.6], "world_yaw": 3.14159},
+		"world_pos": [-8.55, 0.41, 16.2], "world_yaw": 1.5708},
 ]
 
 var _paused := false
