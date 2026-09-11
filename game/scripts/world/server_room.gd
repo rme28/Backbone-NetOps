@@ -7,14 +7,16 @@ extends Node3D
 
 const MENU_SCENE := "res://scenes/ui/menu.tscn"
 const CABLE_MAX_DISTANCE := 8.0
-const TERMINAL_AUTO_REFRESH := 0.5
 const TERMINAL_COMMANDS := [
 	"enable", "disable", "configure terminal", "end", "exit",
-	"show running-config", "show startup-config", "show interfaces",
-	"show ip interface brief", "show ip route", "show arp", "show vlan brief",
+	"show running-config", "show interfaces",
+	"show ip interface brief", "show ip route", "show vlan brief",
 	"ping", "traceroute", "hostname", "interface", "description",
-	"ip address", "ip route", "no shutdown", "shutdown",
-	"copy running-config startup-config", "write memory",
+	"ip address", "ip route", "ip default-gateway",
+	"no shutdown", "shutdown", "no ip address", "no ip route", "no vlan",
+	"vlan", "name",
+	"switchport mode access", "switchport mode trunk",
+	"switchport access vlan", "switchport trunk allowed vlan",
 ]
 
 var _paused := false
@@ -52,6 +54,8 @@ var _interface_positions: Dictionary = {} # "device|interface" -> Vector3
 var _used_interfaces: Dictionary = {}     # device_name -> Array[String]
 var _cable_start: String = ""
 var _cable_start_interface: String = ""
+var _cable_nodes: Dictionary = {}         # cle de lien -> Node3D du cable (pour debrancher)
+var _port_leds: Dictionary = {}           # "device|iface" -> MeshInstance3D de la LED d'etat
 var _device_configs: Dictionary = {}      # device_name -> configuration CLI
 var _held_root: Node3D                     # objet tenu en main (viewmodel), enfant de la camera
 
@@ -72,8 +76,6 @@ var _terminal_completion_seed := ""
 var _terminal_completing := false
 var _terminal_mode := "exec"
 var _terminal_interface := ""
-var _terminal_refresh_accum := 0.0
-var _terminal_refresh_in_flight := false
 
 
 func _ready() -> void:
@@ -101,6 +103,9 @@ func _ready() -> void:
 
 	# Reconstruit immediatement les visuels 3D depuis la sauvegarde (sans PT).
 	_rebuild_visuals_from_save()
+	# Le modele reseau logique suit chaque evenement enregistre.
+	GameState.event_recorded.connect(func(_event): _sync_netsim())
+	_sync_netsim()
 	# Rattrape les objectifs eventuellement ajoutes au catalogue depuis la sauvegarde.
 	Objectives.evaluate()
 	_refresh_objectives_panel()
@@ -1036,7 +1041,26 @@ func _apply_event_visual(event: Dictionary) -> void:
 			var key1 := "%s|%s" % [dev1, iface1]
 			var key2 := "%s|%s" % [dev2, iface2]
 			if _interface_positions.has(key1) and _interface_positions.has(key2):
-				_draw_cable(_interface_positions[key1], _interface_positions[key2], event.get("cable", "rj45"))
+				var cable := _draw_cable(_interface_positions[key1], _interface_positions[key2], event.get("cable", "rj45"))
+				_cable_nodes[_link_key(dev1, iface1, dev2, iface2)] = cable
+		"remove_link":
+			var dev1: String = event.get("dev1", "")
+			var dev2: String = event.get("dev2", "")
+			var iface1: String = event.get("iface1", "")
+			var iface2: String = event.get("iface2", "")
+			_mark_interface_free(dev1, iface1)
+			_mark_interface_free(dev2, iface2)
+			var key := _link_key(dev1, iface1, dev2, iface2)
+			if _cable_nodes.has(key):
+				_cable_nodes[key].queue_free()
+				_cable_nodes.erase(key)
+
+
+## Cle canonique d'un lien, independante de l'ordre des extremites.
+func _link_key(dev1: String, iface1: String, dev2: String, iface2: String) -> String:
+	var a := "%s|%s" % [dev1, iface1]
+	var b := "%s|%s" % [dev2, iface2]
+	return "%s__%s" % [a, b] if a < b else "%s__%s" % [b, a]
 
 
 func _mark_interface_used(device_name: String, iface: String) -> void:
@@ -1045,6 +1069,12 @@ func _mark_interface_used(device_name: String, iface: String) -> void:
 	var used: Array = _used_interfaces.get(device_name, [])
 	if not (iface in used):
 		used.append(iface)
+	_used_interfaces[device_name] = used
+
+
+func _mark_interface_free(device_name: String, iface: String) -> void:
+	var used: Array = _used_interfaces.get(device_name, [])
+	used.erase(iface)
 	_used_interfaces[device_name] = used
 
 
@@ -1323,6 +1353,16 @@ func _add_device_ports(body: Node3D, device_name: String, category: String, comp
 		box.material = _material(Color("050708"), 0.4, 0.7)
 		port_mesh.mesh = box
 		port.add_child(port_mesh)
+		# LED d'etat du port (au-dessus du connecteur), pilotee par NetSim :
+		# eteinte = libre, verte = lien actif, orange = cable mais down.
+		var led := MeshInstance3D.new()
+		var led_box := BoxMesh.new()
+		led_box.size = Vector3(0.03, 0.018, 0.012)
+		led_box.material = _material(Color("101314"), 0.5)
+		led.mesh = led_box
+		led.position = Vector3(0, 0.062, 0.026)
+		port.add_child(led)
+		_port_leds["%s|%s" % [device_name, iface]] = led
 		var port_col := CollisionShape3D.new()
 		var port_shape := BoxShape3D.new()
 		port_shape.size = Vector3(0.21, 0.17, 0.15)
@@ -1341,29 +1381,34 @@ func _add_device_ports(body: Node3D, device_name: String, category: String, comp
 		_interface_positions["%s|%s" % [device_name, iface]] = body.to_global(local_pos)
 
 
-func _draw_cable(a: Vector3, b: Vector3, cable_type := "rj45") -> void:
+## Construit le visuel d'un cable (plugs + segments) dans un noeud conteneur,
+## pour pouvoir le supprimer d'un bloc au debranchement.
+func _draw_cable(a: Vector3, b: Vector3, cable_type := "rj45") -> Node3D:
+	var cable := Node3D.new()
+	add_child(cable)
 	var floor_a := Vector3(a.x, 0.12, a.z)
 	var floor_b := Vector3(b.x, 0.12, b.z)
 	var corner := Vector3(floor_b.x, 0.12, floor_a.z)
-	_add_cable_plug(a, cable_type)
-	_add_cable_plug(b, cable_type)
-	_draw_cable_segment(a, floor_a, cable_type)
-	_draw_cable_segment(floor_a, corner, cable_type)
-	_draw_cable_segment(corner, floor_b, cable_type)
-	_draw_cable_segment(floor_b, b, cable_type)
+	_add_cable_plug(cable, a, cable_type)
+	_add_cable_plug(cable, b, cable_type)
+	_draw_cable_segment(cable, a, floor_a, cable_type)
+	_draw_cable_segment(cable, floor_a, corner, cable_type)
+	_draw_cable_segment(cable, corner, floor_b, cable_type)
+	_draw_cable_segment(cable, floor_b, b, cable_type)
+	return cable
 
 
-func _add_cable_plug(pos: Vector3, cable_type: String) -> void:
+func _add_cable_plug(parent: Node3D, pos: Vector3, cable_type: String) -> void:
 	var plug := MeshInstance3D.new()
 	var mesh := BoxMesh.new()
 	mesh.size = Vector3(0.11, 0.08, 0.14)
 	mesh.material = _material(Color("e1b84b") if cable_type == "fiber" else Color("42a5d9"), 0.32, 0.2)
 	plug.mesh = mesh
+	parent.add_child(plug)
 	plug.global_position = pos
-	add_child(plug)
 
 
-func _draw_cable_segment(a: Vector3, b: Vector3, cable_type: String) -> void:
+func _draw_cable_segment(parent: Node3D, a: Vector3, b: Vector3, cable_type: String) -> void:
 	if a.distance_to(b) < 0.02:
 		return
 	var mesh_inst := MeshInstance3D.new()
@@ -1374,13 +1419,30 @@ func _draw_cable_segment(a: Vector3, b: Vector3, cable_type: String) -> void:
 	var mat := _material(Color("f0c84f") if cable_type == "fiber" else Color("2498d1"), 0.38, 0.12)
 	mesh.material = mat
 	mesh_inst.mesh = mesh
-	add_child(mesh_inst)
+	parent.add_child(mesh_inst)
 
 	mesh_inst.global_position = (a + b) / 2.0
 	var dir := (b - a).normalized()
 	if abs(dir.dot(Vector3.UP)) < 0.999:
 		mesh_inst.look_at(b, Vector3.UP)
 		mesh_inst.rotate_object_local(Vector3.RIGHT, PI / 2.0)
+
+
+## Met a jour la couleur des LEDs de tous les ports selon l'etat NetSim.
+func _refresh_port_leds() -> void:
+	var led_off := _material(Color("101314"), 0.5)
+	var led_up := _material(Color("113322"), 0.4, 0.0, false, Color("2fdd7a"), 1.8)
+	var led_down := _material(Color("332211"), 0.4, 0.0, false, Color("ddaa22"), 1.4)
+	for key in _port_leds:
+		var led: MeshInstance3D = _port_leds[key]
+		if not is_instance_valid(led):
+			continue
+		var dev := str(key).get_slice("|", 0)
+		var iface := str(key).get_slice("|", 1)
+		var mat: Material = led_off
+		if NetSim.cable_connected(dev, iface):
+			mat = led_up if NetSim.link_protocol_up(dev, iface) else led_down
+		(led.mesh as BoxMesh).material = mat
 
 
 # --- Entrees ------------------------------------------------------------------
@@ -1423,15 +1485,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		_handle_cable_click()
 
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	if not _terminal_open:
 		_update_inspection_panel()
 		return
 	_inspection_label.visible = false
-	_terminal_refresh_accum += delta
-	if _terminal_refresh_accum >= TERMINAL_AUTO_REFRESH:
-		_terminal_refresh_accum = 0.0
-		_refresh_terminal()
 
 
 func _toggle_pause() -> void:
@@ -1465,9 +1523,8 @@ func _close_palette() -> void:
 func _open_terminal(device_name: String) -> void:
 	_terminal_device = device_name
 	_terminal_open = true
-	_terminal_refresh_accum = 0.0
 	_terminal_layer.visible = true
-	_terminal_title.text = "%s  —  Terminal" % device_name
+	_terminal_title.text = "%s - Terminal" % device_name
 	_terminal_mode = "exec"
 	_terminal_interface = ""
 	_update_terminal_prompt()
@@ -1480,7 +1537,6 @@ func _open_terminal(device_name: String) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_player.set_active(false)
 	_focus_terminal_input()
-	_refresh_terminal()
 	_update_held_item_visibility()
 
 
@@ -1515,23 +1571,70 @@ func _keep_terminal_focus() -> void:
 		_focus_terminal_input()
 
 
+## Categories dont les interfaces sont actives des la sortie de boite (comme
+## dans la realite : un switch ou un PC a ses ports up par defaut, un routeur
+## Cisco demarre tout en shutdown).
+const DEFAULT_UP_CATEGORIES := ["switch", "switch_l3", "access_point", "pc", "client_laptop", "server", "nas"]
+
+
 func _ensure_device_config(device_name: String, category: String) -> void:
-	if _device_configs.has(device_name): return
+	if _device_configs.has(device_name):
+		return
 	if GameState.device_configs.has(device_name):
 		_device_configs[device_name] = GameState.device_configs[device_name].duplicate(true)
+		_normalize_config(device_name)
 		return
+	var default_up := category in DEFAULT_UP_CATEGORIES
 	var interfaces := {}
 	for iface in DeviceInterfaces.BY_CATEGORY.get(category, []):
-		interfaces[iface] = {"address": "", "shutdown": true, "description": ""}
+		interfaces[iface] = {
+			"address": "", "shutdown": not default_up, "description": "",
+			"mode": "access", "vlan": 1, "trunk_allowed": "all",
+		}
 	_device_configs[device_name] = {
 		"hostname": device_name, "category": category,
 		"interfaces": interfaces, "routes": [],
+		"default_gateway": "",
+		"vlans": {"1": "default"},
 	}
 	_save_device_config(device_name)
 
 
+## Complete les champs manquants d'une config chargee depuis une ancienne
+## sauvegarde (VLANs, passerelle...), sans toucher aux valeurs existantes.
+func _normalize_config(device_name: String) -> void:
+	var config: Dictionary = _device_configs[device_name]
+	if not config.has("default_gateway"): config["default_gateway"] = ""
+	if not config.has("vlans"): config["vlans"] = {"1": "default"}
+	if not config.has("routes"): config["routes"] = []
+	for iface in config.get("interfaces", {}):
+		var state: Dictionary = config["interfaces"][iface]
+		if not state.has("mode"): state["mode"] = "access"
+		if not state.has("vlan"): state["vlan"] = 1
+		if not state.has("trunk_allowed"): state["trunk_allowed"] = "all"
+
+
 func _save_device_config(device_name: String) -> void:
 	GameState.device_configs[device_name] = _device_configs[device_name].duplicate(true)
+	_sync_netsim()
+
+
+## Pousse l'etat courant (configs + liens du journal) dans le modele reseau
+## logique, puis rafraichit les indicateurs visuels qui en dependent.
+func _sync_netsim() -> void:
+	NetSim.rebuild(_device_configs, NetSim.links_from_events(GameState.events))
+	_refresh_port_leds()
+	# Certains objectifs dependent de l'etat reseau (liens actifs), pas
+	# seulement du journal : reevaluation a chaque changement de config.
+	Objectives.evaluate()
+
+
+func _is_switch_device() -> bool:
+	return str(_device_configs[_terminal_device].get("category", "")) in ["switch", "switch_l3"]
+
+
+func _is_host_device() -> bool:
+	return str(_device_configs[_terminal_device].get("category", "")) in ["pc", "client_laptop", "server", "nas"]
 
 
 func _execute_terminal_command(command: String) -> void:
@@ -1541,7 +1644,7 @@ func _execute_terminal_command(command: String) -> void:
 	if _command_matches(words, ["end"]):
 		_terminal_mode = "exec"; _terminal_interface = ""; _update_terminal_prompt(); return
 	if _command_matches(words, ["exit"]):
-		if _terminal_mode == "interface":
+		if _terminal_mode in ["interface", "vlan"]:
 			_terminal_mode = "config"; _terminal_interface = ""; _update_terminal_prompt()
 		elif _terminal_mode == "config":
 			_terminal_mode = "exec"; _update_terminal_prompt()
@@ -1550,7 +1653,11 @@ func _execute_terminal_command(command: String) -> void:
 	if _command_matches(words, ["show", "running-config"]): _show_running_config(); return
 	if _command_matches(words, ["show", "ip", "route"]): _show_ip_routes(); return
 	if _command_matches(words, ["show", "ip", "interface", "brief"]): _show_ip_interfaces(); return
+	if _command_matches(words, ["show", "interfaces"]): _show_interfaces_detail(); return
+	if _command_matches(words, ["show", "vlan"]) or _command_matches(words, ["show", "vlan", "brief"]):
+		_show_vlans(); return
 	if _command_starts(words, ["ping"]): _run_ping_command(words); return
+	if _command_starts(words, ["traceroute"]): _run_traceroute_command(words); return
 
 	if _terminal_mode == "exec":
 		if _command_matches(words, ["configure", "terminal"]):
@@ -1560,10 +1667,17 @@ func _execute_terminal_command(command: String) -> void:
 	elif _terminal_mode == "config":
 		if _command_starts(words, ["hostname"]): _set_hostname(command)
 		elif _command_starts(words, ["interface"]): _enter_interface(words)
+		elif _command_starts(words, ["no", "ip", "route"]): _remove_static_route(words)
 		elif _command_starts(words, ["ip", "route"]):
 			if _device_configs[_terminal_device]["category"] == "switch": _append_terminal("% IP routing is not available on a Layer 2 switch\n")
 			else: _add_static_route(words)
+		elif _command_starts(words, ["ip", "default-gateway"]): _set_default_gateway(words)
+		elif _command_starts(words, ["no", "vlan"]): _remove_vlan(words)
+		elif _command_starts(words, ["vlan"]): _enter_vlan(words)
 		else: _append_terminal("% Invalid configuration command\n")
+	elif _terminal_mode == "vlan":
+		if _command_starts(words, ["name"]): _set_vlan_name(command)
+		else: _append_terminal("% Invalid VLAN configuration command\n")
 	elif _terminal_mode == "interface":
 		if _command_matches(words, ["no", "ip", "address"]): _clear_interface_address()
 		elif _command_starts(words, ["ip", "address"]):
@@ -1572,6 +1686,7 @@ func _execute_terminal_command(command: String) -> void:
 		elif _command_matches(words, ["no", "shutdown"]): _set_interface_shutdown(false)
 		elif _command_matches(words, ["shutdown"]): _set_interface_shutdown(true)
 		elif _command_starts(words, ["description"]): _set_interface_description(command)
+		elif _command_starts(words, ["switchport"]): _handle_switchport(words)
 		else: _append_terminal("% Invalid interface command\n")
 
 
@@ -1665,27 +1780,142 @@ func _add_static_route(words: PackedStringArray) -> void:
 	_save_device_config(_terminal_device)
 
 
+func _remove_static_route(words: PackedStringArray) -> void:
+	if words.size() < 4: _append_terminal("% Expected: no ip route NETWORK/PREFIX NEXT-HOP\n"); return
+	var network := words[3]
+	var next_hop := words[4] if words.size() > 4 else ""
+	var routes: Array = _device_configs[_terminal_device]["routes"]
+	for i in routes.size():
+		var route: Dictionary = routes[i]
+		if str(route["network"]) == network and (next_hop.is_empty() or str(route["next_hop"]) == next_hop):
+			routes.remove_at(i)
+			_save_device_config(_terminal_device)
+			return
+	_append_terminal("% No matching route\n")
+
+
+func _set_default_gateway(words: PackedStringArray) -> void:
+	if words.size() < 3: _append_terminal("% Expected: ip default-gateway A.B.C.D\n"); return
+	_device_configs[_terminal_device]["default_gateway"] = words[2]
+	_save_device_config(_terminal_device)
+
+
+# --- VLANs / switchport ---------------------------------------------------------
+
+func _enter_vlan(words: PackedStringArray) -> void:
+	if not _is_switch_device():
+		_append_terminal("% VLAN configuration is only available on switches\n"); return
+	if words.size() < 2 or not words[1].is_valid_int():
+		_append_terminal("% Expected: vlan <1-4094>\n"); return
+	var vlan_id := int(words[1])
+	if vlan_id < 1 or vlan_id > 4094:
+		_append_terminal("% VLAN id out of range\n"); return
+	var vlans: Dictionary = _device_configs[_terminal_device]["vlans"]
+	if not vlans.has(str(vlan_id)):
+		vlans[str(vlan_id)] = "VLAN%04d" % vlan_id
+		_save_device_config(_terminal_device)
+	_terminal_interface = str(vlan_id)
+	_terminal_mode = "vlan"
+	_update_terminal_prompt()
+
+
+func _remove_vlan(words: PackedStringArray) -> void:
+	if not _is_switch_device():
+		_append_terminal("% VLAN configuration is only available on switches\n"); return
+	if words.size() < 3 or not words[2].is_valid_int():
+		_append_terminal("% Expected: no vlan <id>\n"); return
+	if words[2] == "1":
+		_append_terminal("% Default VLAN 1 cannot be deleted\n"); return
+	_device_configs[_terminal_device]["vlans"].erase(words[2])
+	_save_device_config(_terminal_device)
+
+
+func _set_vlan_name(command: String) -> void:
+	var value := command.get_slice(" ", 1).strip_edges()
+	if value.is_empty(): _append_terminal("% Name required\n"); return
+	_device_configs[_terminal_device]["vlans"][_terminal_interface] = value
+	_save_device_config(_terminal_device)
+
+
+func _handle_switchport(words: PackedStringArray) -> void:
+	if not _is_switch_device():
+		_append_terminal("% switchport is only available on switch ports\n"); return
+	var state: Dictionary = _device_configs[_terminal_device]["interfaces"][_terminal_interface]
+	if _command_matches(words, ["switchport", "mode", "access"]):
+		state["mode"] = "access"
+	elif _command_matches(words, ["switchport", "mode", "trunk"]):
+		state["mode"] = "trunk"
+	elif _command_starts(words, ["switchport", "access", "vlan"]):
+		if words.size() < 4 or not words[3].is_valid_int():
+			_append_terminal("% Expected: switchport access vlan <id>\n"); return
+		if not _device_configs[_terminal_device]["vlans"].has(words[3]):
+			_append_terminal("%% VLAN %s does not exist (create it with: vlan %s)\n" % [words[3], words[3]]); return
+		state["vlan"] = int(words[3])
+	elif _command_starts(words, ["switchport", "trunk", "allowed", "vlan"]):
+		if words.size() < 5:
+			_append_terminal("% Expected: switchport trunk allowed vlan <list|all>\n"); return
+		state["trunk_allowed"] = words[4]
+	else:
+		_append_terminal("% Invalid switchport command\n"); return
+	_save_device_config(_terminal_device)
+
+
+# --- Show commands ---------------------------------------------------------------
+
 func _show_running_config() -> void:
 	var config: Dictionary = _device_configs[_terminal_device]
 	_append_terminal("Building configuration...\n\nhostname %s\n!\n" % config["hostname"])
+	if _is_switch_device():
+		for vlan_id in config.get("vlans", {}):
+			if str(vlan_id) != "1":
+				_append_terminal("vlan %s\n name %s\n!\n" % [vlan_id, config["vlans"][vlan_id]])
 	for iface in config["interfaces"]:
 		var state: Dictionary = config["interfaces"][iface]
 		_append_terminal("interface %s\n" % iface)
 		if not str(state["description"]).is_empty(): _append_terminal(" description %s\n" % state["description"])
 		if not str(state["address"]).is_empty(): _append_terminal(" ip address %s\n" % state["address"])
+		if _is_switch_device():
+			if str(state.get("mode", "access")) == "trunk":
+				_append_terminal(" switchport mode trunk\n")
+				if str(state.get("trunk_allowed", "all")) != "all":
+					_append_terminal(" switchport trunk allowed vlan %s\n" % state["trunk_allowed"])
+			elif int(state.get("vlan", 1)) != 1:
+				_append_terminal(" switchport access vlan %d\n" % int(state["vlan"]))
 		_append_terminal(" %s\n!\n" % ("shutdown" if state["shutdown"] else "no shutdown"))
 	for route in config["routes"]: _append_terminal("ip route %s %s\n" % [route["network"], route["next_hop"]])
+	if not str(config.get("default_gateway", "")).is_empty():
+		_append_terminal("ip default-gateway %s\n" % config["default_gateway"])
 	_append_terminal("end\n")
 
 
 func _show_ip_interfaces() -> void:
-	_append_terminal("Interface        IP-Address          Status\n")
+	_append_terminal("Interface        IP-Address          Status                 Protocol\n")
 	var interfaces: Dictionary = _device_configs[_terminal_device]["interfaces"]
 	for iface in interfaces:
 		var state: Dictionary = interfaces[iface]
 		var address := str(state["address"]) if not str(state["address"]).is_empty() else "unassigned"
 		var status := "administratively down" if state["shutdown"] else "up"
-		_append_terminal("%-16s %-19s %s\n" % [iface, address, status])
+		var protocol := "up" if NetSim.link_protocol_up(_terminal_device, iface) else "down"
+		_append_terminal("%-16s %-19s %-22s %s\n" % [iface, address, status, protocol])
+
+
+func _show_interfaces_detail() -> void:
+	var interfaces: Dictionary = _device_configs[_terminal_device]["interfaces"]
+	for iface in interfaces:
+		var state: Dictionary = interfaces[iface]
+		var admin := "administratively down" if state["shutdown"] else "up"
+		var protocol := "up" if NetSim.link_protocol_up(_terminal_device, iface) else "down"
+		_append_terminal("%s is %s, line protocol is %s\n" % [iface, admin, protocol])
+		if not str(state["description"]).is_empty():
+			_append_terminal("  Description: %s\n" % state["description"])
+		if not str(state["address"]).is_empty():
+			_append_terminal("  Internet address is %s\n" % state["address"])
+		if _is_switch_device():
+			if str(state.get("mode", "access")) == "trunk":
+				_append_terminal("  Switchport: trunk, allowed VLANs %s\n" % str(state.get("trunk_allowed", "all")))
+			else:
+				_append_terminal("  Switchport: access, VLAN %d\n" % int(state.get("vlan", 1)))
+		_append_terminal("  Link: %s\n" % ("connected" if NetSim.cable_connected(_terminal_device, iface) else "not connected"))
 
 
 func _show_ip_routes() -> void:
@@ -1696,17 +1926,75 @@ func _show_ip_routes() -> void:
 		if not str(state["address"]).is_empty() and not state["shutdown"]:
 			_append_terminal("C  %s is directly connected, %s\n" % [state["address"], iface])
 	for route in config["routes"]: _append_terminal("S  %s via %s\n" % [route["network"], route["next_hop"]])
+	var gateway := str(config.get("default_gateway", ""))
+	if not gateway.is_empty():
+		_append_terminal("S* 0.0.0.0/0 via %s (default gateway)\n" % gateway)
 
+
+func _show_vlans() -> void:
+	if not _is_switch_device():
+		_append_terminal("% This device does not support VLANs\n"); return
+	var config: Dictionary = _device_configs[_terminal_device]
+	_append_terminal("VLAN  Name                 Ports\n")
+	var vlan_ids: Array = config.get("vlans", {}).keys()
+	vlan_ids.sort_custom(func(a, b): return int(a) < int(b))
+	for vlan_id in vlan_ids:
+		var ports: Array = []
+		for iface in config["interfaces"]:
+			var state: Dictionary = config["interfaces"][iface]
+			if str(state.get("mode", "access")) == "access" and int(state.get("vlan", 1)) == int(vlan_id):
+				ports.append(iface)
+		_append_terminal("%-5s %-20s %s\n" % [vlan_id, config["vlans"][vlan_id], ", ".join(ports)])
+	var trunks: Array = []
+	for iface in config["interfaces"]:
+		if str(config["interfaces"][iface].get("mode", "access")) == "trunk":
+			trunks.append("%s (allowed: %s)" % [iface, str(config["interfaces"][iface].get("trunk_allowed", "all"))])
+	if not trunks.is_empty():
+		_append_terminal("Trunk ports: %s\n" % ", ".join(trunks))
+
+
+# --- Ping / traceroute ------------------------------------------------------------
 
 func _run_ping_command(words: PackedStringArray) -> void:
 	if words.size() < 2: _append_terminal("% Destination required\n"); return
 	var destination := words[1]
-	_append_terminal("Resolving path through ns-3...\n")
-	Bridge.ping(_terminal_device, destination, _build_topology_payload(), func(status, data):
-		if status == "ok" and typeof(data) == TYPE_DICTIONARY: _append_terminal(str(data.get("output", "")) + "\n")
-		else: _append_terminal("Error: %s\n" % str(data))
-		_focus_terminal_input()
-	)
+	var result: Dictionary = NetSim.ping(_terminal_device, destination)
+	_append_terminal("Sending 5 ICMP echos to %s:\n" % destination)
+	if result["success"]:
+		_append_terminal("!!!!!\nSuccess rate is 100 percent (5/5)\n")
+		var path: Array = result.get("path", [])
+		if path.size() > 2:
+			_append_terminal("Path: %s\n" % " -> ".join(path))
+		_record_ping_success(destination, path.size())
+	else:
+		_append_terminal(".....\nSuccess rate is 0 percent (0/5)\n")
+		_append_terminal(NetSim.reason_text(str(result["reason"])) + "\n")
+
+
+## Journalise un ping reussi (pour les objectifs), sans dupliquer les entrees
+## identiques pour ne pas gonfler la sauvegarde.
+func _record_ping_success(destination: String, hops: int) -> void:
+	for event in GameState.events:
+		if event.get("type", "") == "ping_ok" and event.get("src", "") == _terminal_device \
+				and event.get("dst", "") == destination:
+			return
+	GameState.record({"type": "ping_ok", "src": _terminal_device, "dst": destination, "hops": hops})
+
+
+func _run_traceroute_command(words: PackedStringArray) -> void:
+	if words.size() < 2: _append_terminal("% Destination required\n"); return
+	var destination := words[1]
+	var result: Dictionary = NetSim.traceroute(_terminal_device, destination)
+	_append_terminal("Tracing the route to %s:\n" % destination)
+	var path: Array = result.get("path", [])
+	var hop := 1
+	for i in range(1, path.size()):
+		_append_terminal("  %d  %s\n" % [hop, path[i]])
+		hop += 1
+	if result["success"]:
+		_append_terminal("Trace complete.\n")
+	else:
+		_append_terminal("  %d  * * *\n%s\n" % [hop, NetSim.reason_text(str(result["reason"]))])
 
 
 func _build_topology_payload() -> Dictionary:
@@ -1740,6 +2028,7 @@ func _update_terminal_prompt() -> void:
 	match _terminal_mode:
 		"config": _terminal_prompt.text = "%s(config)# " % hostname
 		"interface": _terminal_prompt.text = "%s(config-if)# " % hostname
+		"vlan": _terminal_prompt.text = "%s(config-vlan)# " % hostname
 		_: _terminal_prompt.text = "%s# " % hostname
 
 
@@ -1829,10 +2118,6 @@ func _navigate_terminal_history(direction: int) -> void:
 	_terminal_history_index = clampi(_terminal_history_index + direction, 0, _terminal_history.size())
 	_terminal_input.text = "" if _terminal_history_index == _terminal_history.size() else _terminal_history[_terminal_history_index]
 	_terminal_input.caret_column = _terminal_input.text.length()
-
-
-func _refresh_terminal() -> void:
-	pass
 
 
 ## Categories d'equipement assez compactes/plates pour etre rackees proprement.
@@ -1940,7 +2225,8 @@ func _name_prefix(category: String) -> String:
 		_: return "GameDev"
 
 
-## Viser un equipement + clic = debut du cable ; viser un 2e + clic = fin du cable.
+## Viser un port + clic = debut du cable ; viser un 2e port + clic = branchement.
+## Cliquer sur un port deja occupe (sans cable en cours) = debranchement.
 func _handle_cable_click() -> void:
 	var hit := _raycast_target()
 	var target: String = hit.get("device", "")
@@ -1951,7 +2237,10 @@ func _handle_cable_click() -> void:
 		_flash_feedback("Vise directement un port ethX pour brancher le cable")
 		return
 	if iface in _used_interfaces.get(target, []):
-		_flash_feedback("%s %s est deja utilise" % [target, iface])
+		if _cable_start.is_empty():
+			_disconnect_link(target, iface)
+		else:
+			_flash_feedback("%s %s est deja utilise" % [target, iface])
 		return
 
 	if _cable_start.is_empty():
@@ -1961,12 +2250,33 @@ func _handle_cable_click() -> void:
 		return
 
 	if target == _cable_start and iface == _cable_start_interface:
-		_flash_feedback("Choisis un autre port pour l'autre bout du cable")
+		_cable_start = ""
+		_cable_start_interface = ""
+		_flash_feedback("Branchement annule")
 		return
 
 	_create_link(_cable_start, target, _cable_start_interface, iface)
 	_cable_start = ""
 	_cable_start_interface = ""
+
+
+## Debranche le cable relie a (dev, iface) : evenement remove_link journalise.
+func _disconnect_link(dev: String, iface: String) -> void:
+	for link in NetSim.links_from_events(GameState.events):
+		var matches_1: bool = link["dev1"] == dev and link["iface1"] == iface
+		var matches_2: bool = link["dev2"] == dev and link["iface2"] == iface
+		if matches_1 or matches_2:
+			var event := {
+				"type": "remove_link",
+				"dev1": link["dev1"], "iface1": link["iface1"],
+				"dev2": link["dev2"], "iface2": link["iface2"],
+			}
+			_apply_event_visual(event)
+			GameState.record(event)
+			_sync_netsim()
+			_flash_feedback("Cable debranche : %s (%s) <-> %s (%s)" % [link["dev1"], link["iface1"], link["dev2"], link["iface2"]])
+			return
+	_flash_feedback("Aucun cable trouve sur %s %s" % [dev, iface])
 
 
 func _create_link(dev1: String, dev2: String, selected_iface1 := "", selected_iface2 := "") -> void:
