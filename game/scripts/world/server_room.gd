@@ -1159,6 +1159,7 @@ func _build_technician_hub() -> void:
 func _open_technician_hub() -> void:
 	_technician_hub_open = true
 	_technician_hub.visible = true
+	_animate_open(_technician_hub)
 	_hub_bcoins.text = "◈ %d B-COINS" % GameState.bcoins
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_player.set_active(false)
@@ -1179,13 +1180,48 @@ func _show_hub_tab(tab: String) -> void:
 		"mail":
 			_hub_content.text = "[font_size=26]MESSAGERIE[/font_size]\n\n[color=#8fd8ff]NOC Central[/color]  •  Nouveau job disponible\nConfigure le réseau du nouveau site avant 18h.\n\n[color=#8fd8ff]Logistique[/color]  •  Inventaire initial\nTout le matériel est débloqué pendant l'alpha.\n\n[color=#8fd8ff]Sécurité[/color]  •  Rappel\nPense à fermer les ports inutilisés."
 		"jobs":
-			_hub_content.text = "[font_size=26]JOBS DISPONIBLES[/font_size]\n\n[color=#ffd166]◈ 120[/color]  PREMIER LAN\nRelier deux postes via un switch et réussir un ping.\n\n[color=#ffd166]◈ 280[/color]  ROUTAGE STATIQUE\nFaire communiquer deux réseaux à travers deux routeurs.\n\n[color=#9aabba]Les jobs seront bientôt acceptables depuis cet écran.[/color]"
+			var jobs := "[font_size=26]OBJECTIFS EN COURS[/font_size]\n\n"
+			for objective in Objectives.get_display_list():
+				var done: bool = objective["done"]
+				var mark := "[color=#7ddf9a]TERMINE[/color]" if done else "[color=#ffd166]◈ %d[/color]" % objective["bcoins"]
+				jobs += "%s  %s\n" % [mark, objective["title"]]
+			jobs += "\n[color=#9aabba]Les recompenses tombent automatiquement des que la condition est remplie sur le reseau reel.[/color]"
+			_hub_content.text = jobs
 		"shop":
 			_hub_content.text = "[font_size=26]BOUTIQUE MATÉRIEL[/font_size]\n\nTous les articles sont actuellement débloqués pour les tests.\n\nRéseau : switches, routeurs, firewall, Wi-Fi\nSystèmes : PC, serveurs, NAS\nAccessoires : cuivre, fibre, console\n\n[color=#ffd166]Solde : ◈ %d B-Coins[/color]" % GameState.bcoins
 		"settings":
 			_hub_content.text = "[font_size=26]PARAMÈTRES RAPIDES[/font_size]\n\nAudio, vidéo, commandes et interface sont accessibles depuis le menu Pause.\n\nÉchap → Paramètres"
 		_:
-			_hub_content.text = "[font_size=28]BONSOIR, TECHNICIEN[/font_size]\n\n[color=#7fdbff]État du moteur[/color]    ns-3 connecté\n[color=#7fdbff]Jobs actifs[/color]       0\n[color=#7fdbff]Messages non lus[/color]  3\n[color=#7fdbff]Solde[/color]              ◈ %d B-Coins\n\n[font_size=20]OBJECTIF DU JOUR[/font_size]\nConstruis ton premier LAN fonctionnel depuis l'inventaire." % GameState.bcoins
+			# Tableau de bord : etat reel du reseau via NetSim et le journal.
+			var device_count := 0
+			for name in _device_categories:
+				if _device_categories[name] not in ["rack", "table"]:
+					device_count += 1
+			var links := NetSim.links_from_events(GameState.events)
+			var links_up := 0
+			for link in links:
+				if NetSim.link_protocol_up(link["dev1"], link["iface1"]):
+					links_up += 1
+			var configured := 0
+			for name in _device_configs:
+				for iface in _device_configs[name].get("interfaces", {}):
+					if NetSim.ip_configured(name, iface):
+						configured += 1
+						break
+			var done_count := 0
+			var total_count := 0
+			for objective in Objectives.get_display_list():
+				total_count += 1
+				if objective["done"]: done_count += 1
+			_hub_content.text = ("[font_size=28]BONSOIR, TECHNICIEN[/font_size]\n\n"
+				+ "[color=#7fdbff]Equipements deployes[/color]   %d\n" % device_count
+				+ "[color=#7fdbff]Cables poses[/color]           %d\n" % links.size()
+				+ "[color=#7fdbff]Liens actifs[/color]           %d\n" % links_up
+				+ "[color=#7fdbff]Machines adressees[/color]     %d\n" % configured
+				+ "[color=#7fdbff]Objectifs[/color]              %d / %d\n" % [done_count, total_count]
+				+ "[color=#7fdbff]Score[/color]                  %d\n" % GameState.score
+				+ "[color=#7fdbff]Solde[/color]                  ◈ %d B-Coins\n" % GameState.bcoins
+				+ "\n[font_size=20]RAPPEL[/font_size]\nUn lien n'est actif que si le cable est branche et les deux interfaces sont up (no shutdown).")
 
 
 func _build_objectives_panel() -> void:
@@ -1816,10 +1852,21 @@ func _toggle_pause() -> void:
 	_update_held_item_visibility()
 
 
+## Fondu discret a l'ouverture d'un panneau plein ecran (CanvasLayer).
+func _animate_open(layer: CanvasLayer) -> void:
+	for child in layer.get_children():
+		if child is CanvasItem:
+			var item := child as CanvasItem
+			item.modulate.a = 0.0
+			var tween := create_tween()
+			tween.tween_property(item, "modulate:a", 1.0, 0.14).set_ease(Tween.EASE_OUT)
+
+
 func _toggle_palette() -> void:
 	_palette_open = not _palette_open
 	_palette_layer.visible = _palette_open
 	if _palette_open:
+		_animate_open(_palette_layer)
 		_palette_bcoins.text = "◈ %d B-COINS" % GameState.bcoins
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		_player.set_active(false)
@@ -1841,6 +1888,7 @@ func _open_terminal(device_name: String) -> void:
 	_terminal_device = device_name
 	_terminal_open = true
 	_terminal_layer.visible = true
+	_animate_open(_terminal_layer)
 	_terminal_title.text = "%s - Terminal" % device_name
 	_terminal_mode = "exec"
 	_terminal_interface = ""
