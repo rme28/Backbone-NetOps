@@ -22,3 +22,6 @@ Godot/
 # Cache Godot
 game/.godot/
 game/.godot/**
+
+# Local visual QA renders
+artifacts/

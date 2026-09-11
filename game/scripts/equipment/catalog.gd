@@ -1,9 +1,8 @@
 class_name EquipmentCatalog
 extends RefCounted
 ## Charge le catalogue d'equipements posables depuis resources/equipment/devices.json.
-## Pour ajouter un nouveau materiel : ajouter une entree au JSON (id, label, pt_model),
-## et si besoin son cablage dans scripts/network/interfaces.gd. Aucun code a toucher
-## ailleurs pour un materiel deja gere par PTBuilder (modeles valides : voir bridge/README.md).
+## Pour ajouter un nouveau materiel : ajouter une entree au JSON (id, label, model)
+## et, si besoin, ses interfaces dans scripts/network/interfaces.gd.
 
 const PATH := "res://resources/equipment/devices.json"
 

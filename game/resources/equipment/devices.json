@@ -1,5 +1,21 @@
 [
-	{"id": "router", "label": "Routeur (Cisco 2911)", "pt_model": "2911"},
-	{"id": "switch", "label": "Switch (Cisco 2960-24TT)", "pt_model": "2960-24TT"},
-	{"id": "pc", "label": "PC", "pt_model": "PC-PT"}
+	{"id":"switch","section":"network","kind":"device","label":"Switch L2","description":"Commutation Ethernet, 6 ports.","model":"switch_l2","placeable":true},
+	{"id":"switch_l3","section":"network","kind":"device","label":"Switch Multilayer","description":"Commutation et routage inter-VLAN.","model":"switch_l3","placeable":true},
+	{"id":"wireless_router","section":"network","kind":"device","label":"Routeur Wi-Fi","description":"Routeur Ethernet à antennes. Radio Wi-Fi à venir.","model":"wireless_router","placeable":true},
+	{"id":"router","section":"network","kind":"device","label":"Routeur","description":"Routage IPv4, passerelles et routes statiques.","model":"router","placeable":true},
+	{"id":"firewall","section":"network","kind":"device","label":"Firewall","description":"Appliance réseau routée. Filtrage et NAT à venir.","model":"firewall","placeable":true},
+	{"id":"access_point","section":"network","kind":"device","label":"Point d'accès","description":"Pont Ethernet compact. Radio Wi-Fi à venir.","model":"access_point","placeable":true},
+	{"id":"rack","section":"network","kind":"device","label":"Baie de brassage","description":"Structure 19 pouces. Vise-la et pose un équipement (E) pour le racker automatiquement.","model":"rack","placeable":true},
+
+	{"id":"nas","section":"systems","kind":"device","label":"NAS","description":"Stockage réseau multi-baies.","model":"nas","placeable":true},
+	{"id":"server","section":"systems","kind":"device","label":"Serveur","description":"Serveur polyvalent pour les services du lab.","model":"server","placeable":true},
+	{"id":"pc","section":"systems","kind":"device","label":"Ordinateur fixe","description":"Poste client Ethernet.","model":"desktop","placeable":true},
+	{"id":"client_laptop","section":"systems","kind":"device","label":"Ordinateur portable","description":"Poste client portable, configurable comme un PC.","model":"laptop_client","placeable":true},
+	{"id":"table","section":"systems","kind":"device","label":"Table de travail","description":"Surface pour poser du matériel.","model":"table","placeable":true},
+	{"id":"laptop","section":"systems","kind":"special","label":"Ordinateur portable technicien","description":"Poste unique du technicien, déjà installé dans la salle.","model":"laptop","placeable":false},
+
+	{"id":"rj45","section":"accessories","kind":"cable","label":"Câble RJ45","description":"Câble Ethernet cuivre standard.","model":"rj45","placeable":false},
+	{"id":"fiber","section":"accessories","kind":"cable","label":"Câble optique","description":"Fibre pour liaisons haut débit.","model":"fiber","placeable":false},
+	{"id":"console_cable","section":"accessories","kind":"tool","label":"Câble console","description":"Accès local aux équipements sans IP.","model":"console","placeable":false},
+	{"id":"cable_tester","section":"tools","kind":"tool","label":"Testeur de câble","description":"Diagnostique les défauts de câblage.","model":"tester","placeable":false}
 ]

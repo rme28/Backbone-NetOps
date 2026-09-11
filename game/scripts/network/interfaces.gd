@@ -6,9 +6,17 @@ extends RefCounted
 ## nouveau modele de materiel est ajoute au catalogue (voir scripts/equipment/catalog.gd).
 
 const BY_CATEGORY := {
-	"router": ["GigabitEthernet0/0", "GigabitEthernet0/1", "GigabitEthernet0/2"],
-	"switch": ["GigabitEthernet0/1", "GigabitEthernet0/2", "GigabitEthernet0/3", "GigabitEthernet0/4", "GigabitEthernet0/5"],
-	"pc": ["FastEthernet0"],
+	"passive": ["wall", "patch"],
+	"router": ["eth0", "eth1", "eth2"],
+	"switch": ["eth0", "eth1", "eth2", "eth3", "eth4", "eth5"],
+	"switch_l3": ["eth0", "eth1", "eth2", "eth3", "eth4", "eth5", "eth6", "eth7"],
+	"wireless_router": ["eth0", "eth1", "eth2", "eth3"],
+	"firewall": ["eth0", "eth1", "eth2", "eth3"],
+	"access_point": ["eth0", "eth1"],
+	"nas": ["eth0", "eth1"],
+	"server": ["eth0", "eth1", "eth2", "eth3"],
+	"pc": ["eth0"],
+	"client_laptop": ["eth0"],
 }
 
 

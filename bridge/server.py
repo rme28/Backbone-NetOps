@@ -1,109 +1,129 @@
-"""
-Pont HTTP entre le jeu Godot et PTBuilder (dans Cisco Packet Tracer).
-
-Endpoints :
-  POST /command   -> le jeu dépose une commande de haut niveau (JSON), reçoit un job_id
-  GET  /result/<job_id> -> le jeu vient lire le résultat d'un job (pending / ok / error)
-  GET  /health     -> sonde de vitalité pour le jeu (ne consomme pas la file)
-  GET  /next       -> PTBuilder (polling) vient chercher le prochain code JS à exécuter
-  POST /result     -> PTBuilder repose le résultat d'un job exécuté
-
-Voir bridge/README.md pour le protocole complet et les pièges connus (CORS, timing).
-"""
-
-import json
+"""Service local entre Godot et le moteur de simulation ns-3."""
+import os
+import subprocess
+import tempfile
 import threading
-import time
 import uuid
-from collections import deque
-
-from flask import Flask, request, jsonify, Response
-
-from commands import build_action_code
-from packettracer import wrap_job
+from pathlib import Path
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 lock = threading.Lock()
+results = {}
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_NS3_DIR = PROJECT_ROOT.parent / "ns-3"
 
-queue = deque()      # jobs en attente d'être servis à PTBuilder : {id, js, not_before}
-results = {}         # job_id -> {"status": "pending"|"ok"|"error", "result"/"error": ...}
+
+def ns3_dir():
+    return Path(os.environ.get("BACKBONE_NS3_DIR", DEFAULT_NS3_DIR))
+
+
+def run_lab(configure_routes=True):
+    root = ns3_dir()
+    executable = root / "build" / "scratch" / "ns3.47-backbone-routed-lab"
+    if not executable.is_file():
+        raise RuntimeError("Moteur ns-3 introuvable dans " + str(root))
+    completed = subprocess.run(
+        [str(executable), f"--configureRoutes={'true' if configure_routes else 'false'}"],
+        cwd=root, capture_output=True, text=True, timeout=20, check=False,
+    )
+    output = (completed.stdout + completed.stderr).strip()
+    return {"success": "PING REUSSI" in output, "output": output}
+
+
+def clean(value):
+    return str(value).replace("\t", " ").replace("\n", " ")
+
+
+def run_topology(payload):
+    root = ns3_dir()
+    executable = root / "build" / "scratch" / "ns3.47-backbone-engine"
+    if not executable.is_file():
+        raise RuntimeError("Moteur dynamique ns-3 introuvable dans " + str(root))
+
+    topology = payload.get("topology", {})
+    lines = []
+    for device in topology.get("devices", []):
+        name = clean(device.get("name", ""))
+        lines.append(f"DEVICE\t{name}\t{clean(device.get('category', 'router'))}")
+        for iface, state in device.get("interfaces", {}).items():
+            status = "down" if state.get("shutdown", True) else "up"
+            lines.append(f"IFACE\t{name}\t{clean(iface)}\t{clean(state.get('address', ''))}\t{status}")
+        for route in device.get("routes", []):
+            lines.append(
+                f"ROUTE\t{name}\t{clean(route.get('network', ''))}\t{clean(route.get('next_hop', ''))}"
+            )
+    for link in topology.get("links", []):
+        lines.append(
+            "LINK\t{}\t{}\t{}\t{}".format(
+                clean(link.get("dev1", "")), clean(link.get("iface1", "")),
+                clean(link.get("dev2", "")), clean(link.get("iface2", "")),
+            )
+        )
+    lines.append(f"PING\t{clean(payload.get('source', ''))}\t{clean(payload.get('destination', ''))}")
+
+    path = None
+    try:
+        with tempfile.NamedTemporaryFile("w", suffix=".topology", delete=False) as scenario:
+            scenario.write("\n".join(lines) + "\n")
+            path = scenario.name
+        completed = subprocess.run(
+            [str(executable), f"--scenario={path}"], cwd=root,
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+        output = (completed.stdout + completed.stderr).strip()
+        return {"success": "PING REUSSI" in output, "output": output}
+    finally:
+        if path:
+            Path(path).unlink(missing_ok=True)
+
+
+def execute_job(job_id, command):
+    try:
+        action = command.get("action")
+        if action == "runRoutedLab":
+            value = run_lab(bool(command.get("configure_routes", True)))
+        elif action == "ping":
+            value = run_topology(command)
+        else:
+            raise ValueError("action inconnue: " + str(action))
+        result = {"status": "ok", "result": value}
+    except Exception as error:
+        result = {"status": "error", "error": str(error)}
+    with lock:
+        results[job_id] = result
 
 
 @app.after_request
-def add_cors_headers(response):
-    # PT 9.x applique le CORS strictement sur son webview : sans ces en-têtes, le JS
-    # peut envoyer la requête (le serveur la reçoit) mais ne peut PAS lire la réponse
-    # -> onerror se déclenche et $se('runCode',...) n'est jamais appelé.
+def cors(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return response
 
 
-@app.route("/command", methods=["POST"])
-def post_command():
-    cmd = request.get_json(force=True)
-    try:
-        action_code = build_action_code(cmd)
-    except (KeyError, ValueError) as e:
-        return jsonify({"error": str(e)}), 400
+@app.get("/health")
+def health():
+    return jsonify({"ok": True, "engine": "ns-3", "ns3_dir": str(ns3_dir())})
 
+
+@app.post("/command")
+def command():
     job_id = uuid.uuid4().hex
-    delay_before = float(cmd.get("delay_before", 0))
-    job = {
-        "id": job_id,
-        "js": wrap_job(job_id, action_code),
-        "not_before": time.time() + delay_before,
-    }
-
     with lock:
-        queue.append(job)
         results[job_id] = {"status": "pending"}
-
+    threading.Thread(
+        target=execute_job, args=(job_id, request.get_json(force=True)), daemon=True
+    ).start()
     return jsonify({"job_id": job_id})
 
 
-@app.route("/result/<job_id>", methods=["GET"])
-def get_result(job_id):
+@app.get("/result/<job_id>")
+def result(job_id):
     with lock:
-        res = results.get(job_id)
-    if res is None:
+        value = results.get(job_id)
+    if value is None:
         return jsonify({"error": "job inconnu"}), 404
-    return jsonify(res)
-
-
-@app.route("/health", methods=["GET"])
-def health():
-    # Sonde de vitalité pour le jeu (ne consomme PAS la file, contrairement à /next).
-    return jsonify({"ok": True})
-
-
-@app.route("/next", methods=["GET"])
-def get_next():
-    with lock:
-        if queue and queue[0]["not_before"] <= time.time():
-            job = queue.popleft()
-            return Response(job["js"], mimetype="text/plain")
-    return Response("", mimetype="text/plain")
-
-
-@app.route("/result", methods=["POST"])
-def post_result():
-    # PTBuilder envoie le payload JSON en corps brut (pas forcément Content-Type json)
-    raw = request.get_data(as_text=True)
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        return jsonify({"error": "payload invalide"}), 400
-
-    job_id = payload.get("id")
-    with lock:
-        if payload.get("ok"):
-            results[job_id] = {"status": "ok", "result": payload.get("result")}
-        else:
-            results[job_id] = {"status": "error", "error": payload.get("error")}
-
-    return jsonify({"received": True})
+    return jsonify(value)
 
 
 if __name__ == "__main__":
