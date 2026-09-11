@@ -50,7 +50,8 @@ Supported semantics: interface admin state and line protocol (cable + both
 ends up), IPv4 with CIDR, connected routes, static routes with longest prefix
 match, host default gateways, L2 switching with access VLANs, trunks (allowed
 lists, native VLAN 1), VLAN-aware flooding, forward and return path checks,
-loop detection.
+loop detection, and DHCP (interfaces set to "dhcp" lease an address and a
+gateway from a pool served inside their L2 domain; see effective_address()).
 
 ### Query API for objectives
 
@@ -90,7 +91,8 @@ resyncs NetSim. Nothing in the terminal is cosmetic. To add a command: extend
 Implemented: hostname, interface, ip address, no ip address, shutdown,
 no shutdown, description, ip route, no ip route, ip default-gateway, vlan,
 name, no vlan, switchport mode access|trunk, switchport access vlan,
-switchport trunk allowed vlan, show running-config, show ip interface brief,
+switchport trunk allowed vlan, ip address dhcp, ip dhcp pool, no ip dhcp
+pool, show running-config, show ip interface brief,
 show interfaces, show ip route, show vlan brief, ping, traceroute.
 
 ## Tests
@@ -117,7 +119,7 @@ Environment variables, inert in normal play:
 
 ## Known limitations (candidates for future work)
 
-Not modeled yet: DHCP, DNS, NAT, MAC address tables, spanning tree, wireless
+Not modeled yet: DNS, NAT, MAC address tables, spanning tree, wireless
 radio coverage (access points bridge their wired ports), tagged subinterfaces
 on routers. The NetSim rebuild-on-change design makes these straightforward to
 add without touching the level code.

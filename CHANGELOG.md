@@ -20,6 +20,7 @@ Versions follow SemVer with an alpha pre-release channel until the project reach
 - Network related objectives: first cable, first active link, first ping, ping across a router
 - Scenario query API documented in docs/ARCHITECTURE.md, plus a headless model test suite and a full runtime selftest
 - Switch and host interfaces now start enabled like real hardware; routers still boot shut down
+- DHCP: hosts accept ip address dhcp, routers and servers serve one line pools (ip dhcp pool NETWORK/PREFIX gateway A.B.C.D); leases resolve through the layer 2 domain, appear in show ip interface brief, and provide the default gateway
 
 ### Changed
 

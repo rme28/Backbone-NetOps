@@ -21,6 +21,7 @@ func _initialize() -> void:
 	_test_static_routes(sim)
 	_test_routing_loop(sim)
 	_test_queries(sim)
+	_test_dhcp(sim)
 
 	print("")
 	if _failures == 0:
@@ -220,3 +221,25 @@ func _test_queries(sim: Node) -> void:
 	_check("vlan_exists", sim.vlan_exists("SW", 10) and not sim.vlan_exists("SW", 30))
 	_check("port_in_vlan access", sim.port_in_vlan("SW", "eth0", 10) and not sim.port_in_vlan("SW", "eth0", 20))
 	_check("port_in_vlan trunk", sim.port_in_vlan("SW", "eth1", 20) and not sim.port_in_vlan("SW", "eth1", 30))
+
+
+func _test_dhcp(sim: Node) -> void:
+	print("dhcp:")
+	var server := _router({"eth0": "10.0.0.1/24", "eth1": "10.0.9.1/24"})
+	server["dhcp_pools"] = [{"network": "10.0.0.0/24", "gateway": "10.0.0.1"}]
+	var client := _host("dhcp")
+	var fixed := _host("10.0.9.10/24", "10.0.9.1")
+	sim.rebuild(
+		{"A": client, "R": server, "B": fixed, "SW": _switch(4)},
+		[_link("A", "eth0", "SW", "eth0"), _link("R", "eth0", "SW", "eth1"),
+		 _link("R", "eth1", "B", "eth0")])
+	var lease := str(sim.effective_address("A", "eth0"))
+	_check("lease attribue", lease.begins_with("10.0.0."), lease)
+	_check("ip_configured via dhcp", sim.ip_configured("A", "eth0"))
+	_check("ping serveur dhcp", sim.can_reach("A", "10.0.0.1"))
+	_check("ping route via passerelle du bail", sim.can_reach("A", "10.0.9.10"), str(sim.ping("A", "10.0.9.10")))
+	# Sans serveur joignable : pas de bail, pas de connectivite.
+	sim.rebuild({"A": _host("dhcp"), "B": _host("10.0.0.2/24"), "SW": _switch(4)},
+		[_link("A", "eth0", "SW", "eth0"), _link("B", "eth0", "SW", "eth1")])
+	_check("pas de bail sans serveur", str(sim.effective_address("A", "eth0")).is_empty())
+	_check("pas de connectivite sans bail", not sim.can_reach("A", "10.0.0.2"))

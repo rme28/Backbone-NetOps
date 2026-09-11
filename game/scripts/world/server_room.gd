@@ -12,7 +12,8 @@ const TERMINAL_COMMANDS := [
 	"show running-config", "show interfaces",
 	"show ip interface brief", "show ip route", "show vlan brief",
 	"ping", "traceroute", "hostname", "interface", "description",
-	"ip address", "ip route", "ip default-gateway",
+	"ip address", "ip address dhcp", "ip route", "ip default-gateway",
+	"ip dhcp pool",
 	"no shutdown", "shutdown", "no ip address", "no ip route", "no vlan",
 	"vlan", "name",
 	"switchport mode access", "switchport mode trunk",
@@ -1923,6 +1924,7 @@ func _normalize_config(device_name: String) -> void:
 	if not config.has("default_gateway"): config["default_gateway"] = ""
 	if not config.has("vlans"): config["vlans"] = {"1": "default"}
 	if not config.has("routes"): config["routes"] = []
+	if not config.has("dhcp_pools"): config["dhcp_pools"] = []
 	for iface in config.get("interfaces", {}):
 		var state: Dictionary = config["interfaces"][iface]
 		if not state.has("mode"): state["mode"] = "access"
@@ -1988,6 +1990,8 @@ func _execute_terminal_command(command: String) -> void:
 			if _device_configs[_terminal_device]["category"] == "switch": _append_terminal("% IP routing is not available on a Layer 2 switch\n")
 			else: _add_static_route(words)
 		elif _command_starts(words, ["ip", "default-gateway"]): _set_default_gateway(words)
+		elif _command_starts(words, ["no", "ip", "dhcp", "pool"]): _remove_dhcp_pool(words)
+		elif _command_starts(words, ["ip", "dhcp", "pool"]): _add_dhcp_pool(words)
 		elif _command_starts(words, ["no", "vlan"]): _remove_vlan(words)
 		elif _command_starts(words, ["vlan"]): _enter_vlan(words)
 		else: _append_terminal("% Invalid configuration command\n")
@@ -1996,6 +2000,11 @@ func _execute_terminal_command(command: String) -> void:
 		else: _append_terminal("% Invalid VLAN configuration command\n")
 	elif _terminal_mode == "interface":
 		if _command_matches(words, ["no", "ip", "address"]): _clear_interface_address()
+		elif _command_matches(words, ["ip", "address", "dhcp"]):
+			if _device_configs[_terminal_device]["category"] == "switch": _append_terminal("% Layer 3 addressing is not available on this switch port\n")
+			else:
+				_device_configs[_terminal_device]["interfaces"][_terminal_interface]["address"] = "dhcp"
+				_save_device_config(_terminal_device)
 		elif _command_starts(words, ["ip", "address"]):
 			if _device_configs[_terminal_device]["category"] == "switch": _append_terminal("% Layer 3 addressing is not available on this switch port\n")
 			else: _set_interface_address(words)
@@ -2116,6 +2125,30 @@ func _set_default_gateway(words: PackedStringArray) -> void:
 	_save_device_config(_terminal_device)
 
 
+## Pool DHCP simplifie en une ligne : ip dhcp pool NETWORK/PREFIX gateway A.B.C.D
+## Le serveur doit posseder une adresse dans le reseau du pool pour repondre.
+func _add_dhcp_pool(words: PackedStringArray) -> void:
+	if _device_configs[_terminal_device]["category"] == "switch":
+		_append_terminal("% DHCP server is not available on a Layer 2 switch\n"); return
+	if words.size() < 6 or words[4] != "gateway" or not "/" in words[3]:
+		_append_terminal("% Expected: ip dhcp pool NETWORK/PREFIX gateway A.B.C.D\n"); return
+	var pools: Array = _device_configs[_terminal_device].get("dhcp_pools", [])
+	pools.append({"network": words[3], "gateway": words[5]})
+	_device_configs[_terminal_device]["dhcp_pools"] = pools
+	_save_device_config(_terminal_device)
+
+
+func _remove_dhcp_pool(words: PackedStringArray) -> void:
+	if words.size() < 5: _append_terminal("% Expected: no ip dhcp pool NETWORK/PREFIX\n"); return
+	var pools: Array = _device_configs[_terminal_device].get("dhcp_pools", [])
+	for i in pools.size():
+		if str(pools[i].get("network", "")) == words[4]:
+			pools.remove_at(i)
+			_save_device_config(_terminal_device)
+			return
+	_append_terminal("% No matching pool\n")
+
+
 # --- VLANs / switchport ---------------------------------------------------------
 
 func _enter_vlan(words: PackedStringArray) -> void:
@@ -2199,6 +2232,8 @@ func _show_running_config() -> void:
 				_append_terminal(" switchport access vlan %d\n" % int(state["vlan"]))
 		_append_terminal(" %s\n!\n" % ("shutdown" if state["shutdown"] else "no shutdown"))
 	for route in config["routes"]: _append_terminal("ip route %s %s\n" % [route["network"], route["next_hop"]])
+	for pool in config.get("dhcp_pools", []):
+		_append_terminal("ip dhcp pool %s gateway %s\n" % [pool["network"], pool["gateway"]])
 	if not str(config.get("default_gateway", "")).is_empty():
 		_append_terminal("ip default-gateway %s\n" % config["default_gateway"])
 	_append_terminal("end\n")
@@ -2210,6 +2245,9 @@ func _show_ip_interfaces() -> void:
 	for iface in interfaces:
 		var state: Dictionary = interfaces[iface]
 		var address := str(state["address"]) if not str(state["address"]).is_empty() else "unassigned"
+		if address == "dhcp":
+			var lease := str(NetSim.effective_address(_terminal_device, iface))
+			address = "%s (dhcp)" % (lease if not lease.is_empty() else "unassigned")
 		var status := "administratively down" if state["shutdown"] else "up"
 		var protocol := "up" if NetSim.link_protocol_up(_terminal_device, iface) else "down"
 		_append_terminal("%-16s %-19s %-22s %s\n" % [iface, address, status, protocol])

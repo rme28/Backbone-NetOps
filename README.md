@@ -20,7 +20,7 @@ The project is an early playable alpha. The current version includes:
 - Routers, L2 switches, multilayer switches, wireless routers, firewalls, and access points
 - Desktop computers, servers, NAS devices, a client laptop, and a unique technician laptop
 - An interactive network command line with command history, shortcuts, contextual help, and Tab completion
-- Per-device interface configuration, IP addressing, static routes, VLANs, trunks, default gateways, and administrative state
+- Per-device interface configuration, IP addressing, static routes, VLANs, trunks, default gateways, DHCP, and administrative state
 - ping and traceroute with instant feedback, the layer 3 path, and real failure reasons
 - Cable disconnection, device removal, and port status LEDs driven by the simulation
 - An optional local ns-3 engine as a deep simulation backend

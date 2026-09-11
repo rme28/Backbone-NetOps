@@ -25,6 +25,7 @@ const HOP_LIMIT := 32
 var _configs: Dictionary = {}   # name -> config (hostname, category, interfaces, routes, vlans, default_gateway)
 var _links: Array = []          # [{dev1, iface1, dev2, iface2}]
 var _link_index: Dictionary = {}  # "dev|iface" -> {peer_dev, peer_iface}
+var _dhcp_leases: Dictionary = {}  # "dev|iface" -> {address: "ip/prefix", gateway: "ip"}
 
 
 ## Reconstruit le modele. configs : device_name -> config du jeu.
@@ -40,6 +41,7 @@ func rebuild(configs: Dictionary, links: Array) -> void:
 		_link_index["%s|%s" % [link["dev2"], link["iface2"]]] = {
 			"peer_dev": link["dev1"], "peer_iface": link["iface1"],
 		}
+	_resolve_dhcp()
 
 
 ## Derive la liste de liens actifs du journal d'evenements (add_link/remove_link).
@@ -60,6 +62,94 @@ static func links_from_events(events: Array) -> Array:
 						links.remove_at(i)
 						break
 	return links
+
+
+## Adresse effective d'une interface (CIDR) : statique, ou bail DHCP resolu.
+## Retourne "" si aucune adresse utilisable.
+func _addr(dev: String, iface: String) -> String:
+	var address := str(_iface(dev, iface).get("address", ""))
+	if address == "dhcp":
+		return str(_dhcp_leases.get("%s|%s" % [dev, iface], {}).get("address", ""))
+	return address
+
+
+## Passerelle effective d'un hote : configuree, ou fournie par le bail DHCP.
+func _gateway(dev: String) -> String:
+	var configured := str(_configs.get(dev, {}).get("default_gateway", ""))
+	if not configured.is_empty():
+		return configured
+	for iface in _configs.get(dev, {}).get("interfaces", {}):
+		var lease: Dictionary = _dhcp_leases.get("%s|%s" % [dev, iface], {})
+		if not lease.is_empty():
+			return str(lease.get("gateway", ""))
+	return ""
+
+
+## Adresse effective exposee a l'UI et aux scenarios ("" si non attribuee).
+func effective_address(dev: String, iface: String) -> String:
+	return _addr(dev, iface)
+
+
+## Attribue les baux DHCP : pour chaque interface configuree en "dhcp", cherche
+## dans son domaine L2 un serveur possedant un pool dont le reseau correspond a
+## une de ses propres adresses, puis alloue la premiere IP libre du pool.
+## Deterministe (ordre alphabetique) pour rester stable d'un rebuild a l'autre.
+func _resolve_dhcp() -> void:
+	_dhcp_leases.clear()
+	var taken := {}
+	for dev in _configs:
+		for iface in _configs[dev].get("interfaces", {}):
+			var address := str(_configs[dev]["interfaces"][iface].get("address", ""))
+			if not address.is_empty() and address != "dhcp":
+				taken[_parse_ip(address.get_slice("/", 0))] = true
+	var clients: Array = []
+	for dev in _configs:
+		for iface in _configs[dev].get("interfaces", {}):
+			var state: Dictionary = _configs[dev]["interfaces"][iface]
+			if str(state.get("address", "")) == "dhcp" and not bool(state.get("shutdown", true)):
+				clients.append([dev, iface])
+	clients.sort()
+	for client in clients:
+		var lease := _find_dhcp_offer(client[0], client[1], taken)
+		if not lease.is_empty():
+			_dhcp_leases["%s|%s" % [client[0], client[1]]] = lease
+			taken[_parse_ip(str(lease["address"]).get_slice("/", 0))] = true
+
+
+func _find_dhcp_offer(dev: String, iface: String, taken: Dictionary) -> Dictionary:
+	for endpoint in _l2_flood(dev, iface):
+		var server: String = endpoint["dev"]
+		for pool in _configs.get(server, {}).get("dhcp_pools", []):
+			var network := str(pool.get("network", ""))
+			var prefix := _prefix_of(network)
+			var base := _parse_ip(network.get_slice("/", 0))
+			if base < 0:
+				continue
+			# Le serveur doit lui-meme avoir une adresse dans le reseau du pool.
+			var server_in_pool := false
+			for server_iface in _configs.get(server, {}).get("interfaces", {}):
+				var server_addr := str(_configs[server]["interfaces"][server_iface].get("address", ""))
+				if not server_addr.is_empty() and server_addr != "dhcp" \
+						and _same_subnet(_parse_ip(server_addr.get_slice("/", 0)), base, prefix):
+					server_in_pool = true
+			if not server_in_pool:
+				continue
+			var gateway_ip := _parse_ip(str(pool.get("gateway", "")))
+			var mask := (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF
+			var network_base := base & mask
+			for offset in range(10, 250):
+				var candidate := network_base + offset
+				if taken.has(candidate) or candidate == gateway_ip:
+					continue
+				return {
+					"address": "%s/%d" % [_ip_to_text(candidate), prefix],
+					"gateway": str(pool.get("gateway", "")),
+				}
+	return {}
+
+
+static func _ip_to_text(value: int) -> String:
+	return "%d.%d.%d.%d" % [(value >> 24) & 255, (value >> 16) & 255, (value >> 8) & 255, value & 255]
 
 
 # --- Requetes elementaires (API scenarios) -------------------------------------
@@ -94,7 +184,7 @@ func interface_up(dev: String, iface: String) -> bool:
 
 
 func ip_configured(dev: String, iface: String) -> bool:
-	return not str(_iface(dev, iface).get("address", "")).is_empty()
+	return not _addr(dev, iface).is_empty()
 
 
 func vlan_exists(dev: String, vlan_id: int) -> bool:
@@ -167,7 +257,7 @@ func _walk(start_dev: String, dst: int, path: Array) -> Dictionary:
 		if not link_protocol_up(current, egress):
 			return _fail("egress-down", path)
 		if first_src_ip < 0:
-			first_src_ip = _parse_ip(str(_iface(current, egress).get("address", "")).get_slice("/", 0))
+			first_src_ip = _parse_ip(_addr(current, egress).get_slice("/", 0))
 		var arp_target: int = route["arp_target"]
 		var owner := _find_l2_neighbor_owning(current, egress, arp_target)
 		if owner.is_empty():
@@ -193,8 +283,7 @@ func _route_lookup(dev: String, dst: int) -> Dictionary:
 	var config: Dictionary = _configs.get(dev, {})
 	# Reseaux directement connectes (interfaces protocol up avec IP).
 	for iface in config.get("interfaces", {}):
-		var state: Dictionary = config["interfaces"][iface]
-		var address := str(state.get("address", ""))
+		var address := _addr(dev, iface)
 		if address.is_empty() or not link_protocol_up(dev, iface):
 			continue
 		var prefix := _prefix_of(address)
@@ -213,8 +302,8 @@ func _route_lookup(dev: String, dst: int) -> Dictionary:
 		if not via.is_empty():
 			best_prefix = prefix
 			best = {"iface": via, "arp_target": _parse_ip(str(route.get("next_hop", "")))}
-	# Passerelle par defaut des hotes (equivaut a 0.0.0.0/0).
-	var gateway := str(config.get("default_gateway", ""))
+	# Passerelle par defaut des hotes (configuree ou via DHCP, = 0.0.0.0/0).
+	var gateway := _gateway(dev)
 	if best_prefix < 0 and not gateway.is_empty():
 		var via := _egress_for_next_hop(dev, _parse_ip(gateway))
 		if not via.is_empty():
@@ -228,7 +317,7 @@ func _egress_for_next_hop(dev: String, next_hop: int) -> String:
 		return ""
 	var interfaces: Dictionary = _configs.get(dev, {}).get("interfaces", {})
 	for iface in interfaces:
-		var address := str(interfaces[iface].get("address", ""))
+		var address := _addr(dev, iface)
 		if address.is_empty() or not link_protocol_up(dev, iface):
 			continue
 		if _same_subnet(next_hop, _parse_ip(address.get_slice("/", 0)), _prefix_of(address)):
@@ -240,10 +329,9 @@ func _egress_for_next_hop(dev: String, next_hop: int) -> String:
 func _owned_iface_for_ip(dev: String, ip: int) -> Dictionary:
 	var interfaces: Dictionary = _configs.get(dev, {}).get("interfaces", {})
 	for iface in interfaces:
-		var state: Dictionary = interfaces[iface]
-		if bool(state.get("shutdown", true)):
+		if bool(interfaces[iface].get("shutdown", true)):
 			continue
-		var address := str(state.get("address", ""))
+		var address := _addr(dev, iface)
 		if not address.is_empty() and _parse_ip(address.get_slice("/", 0)) == ip:
 			return {"iface": iface}
 	return {}
@@ -255,10 +343,9 @@ func _find_l2_neighbor_owning(dev: String, egress: String, target_ip: int) -> Di
 	for endpoint in _l2_flood(dev, egress):
 		var candidate: String = endpoint["dev"]
 		var iface: String = endpoint["iface"]
-		var state := _iface(candidate, iface)
-		if bool(state.get("shutdown", true)):
+		if bool(_iface(candidate, iface).get("shutdown", true)):
 			continue
-		var address := str(state.get("address", ""))
+		var address := _addr(candidate, iface)
 		if not address.is_empty() and _parse_ip(address.get_slice("/", 0)) == target_ip:
 			return {"dev": candidate, "iface": iface}
 	return {}
