@@ -100,6 +100,9 @@ var _terminal_mode := "exec"
 var _terminal_interface := ""
 
 
+var _pc_os: CanvasLayer
+var _host_service: RefCounted
+var _office_hosts: Array[Dictionary] = []
 var _fixed_network: RefCounted
 
 func _ready() -> void:
@@ -115,6 +118,12 @@ func _ready() -> void:
 	_build_ui()
 	_build_palette()
 	_build_terminal()
+	_host_service = preload("res://scripts/network/host_service.gd").new(_device_configs, _save_device_config, NetSim)
+	_host_service.ping_succeeded.connect(_record_host_ping_success)
+	_pc_os = preload("res://scripts/ui/pc_os/desktop.gd").new()
+	_pc_os.service = _host_service
+	add_child(_pc_os)
+	_pc_os.closed.connect(_close_terminal)
 	_build_technician_hub()
 	_build_objectives_panel()
 	_build_pause_menu()
@@ -144,6 +153,7 @@ func _ready() -> void:
 		for event in STARTER_EVENTS:
 			GameState.events.append(event.duplicate(true))
 
+	_ensure_office_hosts()
 	# Reconstruit immediatement les visuels 3D depuis la sauvegarde (sans PT).
 	_rebuild_visuals_from_save()
 	# Le modele reseau logique suit chaque evenement enregistre.
@@ -197,13 +207,12 @@ func _run_selftest() -> void:
 	_sync_netsim()
 	check.call("liens proto up (defauts switch/pc)", NetSim.link_protocol_up("PC-A", "eth0") and NetSim.link_protocol_up("PC-B", "eth0"))
 
-	# Configuration IP des PC via la vraie couche terminal.
+	# The runtime drives the same adapter as the PC network application.
 	for setup in [["PC-A", "10.0.0.1"], ["PC-B", "10.0.0.2"]]:
 		_open_terminal(setup[0])
-		for cmd in ["configure terminal", "interface eth0", "ip address %s 255.255.255.0" % setup[1], "no shutdown", "end"]:
-			_execute_terminal_command(cmd)
+		_host_service.configure(setup[0],"eth0",false,setup[1],"24","")
 		_close_terminal()
-	check.call("ip configuree via terminal", NetSim.ip_configured("PC-A", "eth0"))
+	check.call("ip configuree via application PC", NetSim.ip_configured("PC-A", "eth0"))
 	check.call("ping PC-A -> PC-B", NetSim.can_reach("PC-A", "10.0.0.2"))
 
 	# Isolation VLAN via le terminal du switch.
@@ -228,7 +237,7 @@ func _run_selftest() -> void:
 	GameState.record({"type": "add_link", "dev1": "PC-B", "iface1": "eth0", "dev2": "SW-CORE", "iface2": "eth1", "cable": "rj45"})
 	_sync_netsim()
 	_open_terminal("PC-A")
-	_execute_terminal_command("ping 10.0.0.2")
+	_host_service.command("PC-A","ping 10.0.0.2")
 	_close_terminal()
 	var has_ping_event := false
 	for event in GameState.events:
@@ -578,7 +587,23 @@ func _build_office_desk(pos: Vector3, yaw: float) -> void:
 			leg_col.shape = leg_shape
 			leg_col.position = Vector3(x,0.37,z)
 			desk.add_child(leg_col)
-	# Moniteur + clavier (decor).
+	var host_name := "POSTE-%02d" % (_office_hosts.size()+1)
+	var host_pos := pos + Vector3(-1.05,0.41,0).rotated(Vector3.UP,yaw)
+	if pos.is_equal_approx(Vector3(-7.5,0,16.2)):
+		host_name = "PC-BUREAU1"
+		host_pos = Vector3(-8.55,0.41,16.2)
+	_office_hosts.append({"type":"place_device","name":host_name,"category":"pc","model":"desktop","world_pos":[host_pos.x,host_pos.y,host_pos.z],"world_yaw":yaw+PI/2})
+	var monitor := StaticBody3D.new()
+	desk.add_child(monitor)
+	monitor.position = Vector3(0,1.02,-0.2)
+	monitor.set_meta("device_name",host_name)
+	var monitor_col := CollisionShape3D.new()
+	var monitor_shape := BoxShape3D.new()
+	monitor_shape.size = Vector3(0.55,0.34,0.035)
+	monitor_col.shape = monitor_shape
+	monitor.add_child(monitor_col)
+	# Monitor and peripherals share the corresponding host's interaction.
+
 	_add_local_box(desk, Vector3(0, 1.02, -0.2), Vector3(0.55, 0.34, 0.03), _material(Color("14181b"), 0.4, 0.4))
 	_add_display(desk, Vector3(0, 1.02, -0.177), Vector2(0.5, 0.29))
 	_add_local_box(desk, Vector3(0, 0.79, -0.2), Vector3(0.06, 0.04, 0.06), leg_mat)
@@ -1850,6 +1875,13 @@ func _close_palette() -> void:
 
 
 func _open_terminal(device_name: String) -> void:
+	if not _device_configs.has(device_name): return
+	if _device_categories.get(device_name, "") in ["pc", "client_laptop"]:
+		_terminal_open = true
+		_pc_os.open_device(device_name)
+		_player.set_active(false)
+		_update_held_item_visibility()
+		return
 	if _fixed_network.fixed.has(device_name):
 		_flash_feedback("Brassage passif : relier la prise au port de panneau portant le même numéro.")
 		return
@@ -1874,6 +1906,7 @@ func _open_terminal(device_name: String) -> void:
 
 
 func _close_terminal() -> void:
+	_pc_os.visible = false
 	_terminal_open = false
 	_terminal_layer.visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -1895,7 +1928,7 @@ func _on_terminal_command_submitted(text: String) -> void:
 
 
 func _focus_terminal_input() -> void:
-	if _terminal_open:
+	if _terminal_open and _terminal_layer.visible:
 		_terminal_input.call_deferred("grab_focus")
 
 
@@ -2348,11 +2381,12 @@ func _run_ping_command(words: PackedStringArray) -> void:
 ## Journalise un ping reussi (pour les objectifs), sans dupliquer les entrees
 ## identiques pour ne pas gonfler la sauvegarde.
 func _record_ping_success(destination: String, hops: int) -> void:
+	_record_host_ping_success(_terminal_device,destination,hops)
+
+func _record_host_ping_success(source: String, destination: String, hops: int) -> void:
 	for event in GameState.events:
-		if event.get("type", "") == "ping_ok" and event.get("src", "") == _terminal_device \
-				and event.get("dst", "") == destination:
-			return
-	GameState.record({"type": "ping_ok", "src": _terminal_device, "dst": destination, "hops": hops})
+		if event.get("type", "") == "ping_ok" and event.get("src", "") == source and event.get("dst", "") == destination: return
+	GameState.record({"type":"ping_ok","src":source,"dst":destination,"hops":hops})
 
 
 func _run_traceroute_command(words: PackedStringArray) -> void:
@@ -2913,3 +2947,14 @@ func _dev_equipment_review() -> void:
 	for entry in [["QA-PC","pc",4.8],["QA-SRV","server",5.4],["QA-NAS","nas",6.0]]:
 		_apply_event_visual({"type":"place_device","name":entry[0],"category":entry[1],"world_pos":[entry[2],0.41,-7.7],"world_yaw":0.0})
 	_create_link("QA-SW","QA-R","eth0","eth0")
+
+
+func _ensure_office_hosts() -> void:
+	for event in GameState.events:
+		if event.get("type","") == "office_hosts_v1": return
+	var known := {}
+	for event in GameState.events:
+		if event.get("type","") == "place_device": known[event.get("name","")] = true
+	for event in _office_hosts:
+		if not known.has(event.name): GameState.events.append(event.duplicate(true))
+	GameState.events.append({"type":"office_hosts_v1"})

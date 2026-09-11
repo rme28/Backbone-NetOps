@@ -34,6 +34,12 @@ func run(room: Node3D, directory: String) -> void:
 	room._toggle_pause()
 	room._open_technician_hub()
 	await capture(room, directory, "12-hub")
+	room._close_technician_hub()
+	room._open_terminal("PC-BUREAU1")
+	await capture(room,directory,"13-pc-desktop")
+	for app in ["Réseau","Terminal","Navigateur"]:
+		room._pc_os.show_app(app)
+		await capture(room,directory,"14-pc-"+str(room._pc_os.app))
 	room.get_tree().quit()
 
 func capture(room: Node3D, directory: String, label: String) -> void:
