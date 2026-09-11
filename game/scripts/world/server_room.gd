@@ -248,6 +248,7 @@ func _run_selftest() -> void:
 
 
 func _run_dev_screenshot(path: String) -> void:
+	_player.set_active(false)
 	var setup_script := OS.get_environment("BACKBONE_SCREENSHOT_SETUP")
 	if not setup_script.is_empty() and has_method(setup_script):
 		call(setup_script)
@@ -2898,7 +2899,7 @@ func _flash_feedback(text: String) -> void:
 
 
 func _dev_equipment_review() -> void:
-	for entry in [["QA-SW","switch",4.6],["QA-R","router",5.2],["QA-FW","firewall",5.8],["QA-WIFI","wireless_router",6.4],["QA-AP","access_point",7.0],["QA-LAP","client_laptop",7.7]]:
+	for entry in [["QA-SW","switch",6.0],["QA-R","router",6.65],["QA-FW","firewall",7.3]]:
 		_apply_event_visual({"type":"place_device","name":entry[0],"category":entry[1],"world_pos":[entry[2],1.01 if entry[1] == "client_laptop" else 0.91,-8.5],"world_yaw":0.0,"supported":true})
 	for entry in [["QA-PC","pc",4.8],["QA-SRV","server",5.4],["QA-NAS","nas",6.0]]:
 		_apply_event_visual({"type":"place_device","name":entry[0],"category":entry[1],"world_pos":[entry[2],0.41,-7.7],"world_yaw":0.0})

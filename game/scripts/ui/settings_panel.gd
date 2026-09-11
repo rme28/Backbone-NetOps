@@ -1,11 +1,21 @@
 class_name SettingsPanel
-extends PanelContainer
+extends Control
 
 signal closed
 
 func _ready() -> void:
 	theme = preload("res://scripts/ui/design_system.gd").get_theme()
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var dim := ColorRect.new()
+	dim.color = Color(0.015, 0.025, 0.03, 0.94)
+	add_child(dim)
+	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var center := CenterContainer.new()
+	add_child(center)
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(960, 0)
+	center.add_child(panel)
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.025, 0.055, 0.075, 0.98)
 	style.border_color = Color("36545a")
@@ -14,11 +24,12 @@ func _ready() -> void:
 	style.content_margin_right = 50
 	style.content_margin_top = 35
 	style.content_margin_bottom = 35
-	add_theme_stylebox_override("panel", style)
+	style.set_corner_radius_all(8)
+	panel.add_theme_stylebox_override("panel", style)
 
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 12)
-	add_child(root)
+	panel.add_child(root)
 	var header := HBoxContainer.new()
 	root.add_child(header)
 	var title := Label.new()
@@ -57,14 +68,10 @@ func _ready() -> void:
 	for bind in [
 		["ZQSD", "Déplacement"], ["SOURIS", "Regarder"], ["TAB", "Inventaire"],
 		["E", "Poser l'équipement"], ["T", "Interagir / Console"],
-		["CLIC G.", "Câbler un port"], ["ÉCHAP", "Pause"],
+		["CLIC G.", "Câbler un port"], ["CLIC D.", "Vue de précision (maintenir)"],
+		["ÉCHAP", "Pause"],
 	]:
 		_add_keybind_row(keybinds, bind[0], bind[1])
-	var rebind_note := Label.new()
-	rebind_note.text = "La personnalisation des touches arrivera avec le système de profils."
-	rebind_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	rebind_note.add_theme_color_override("font_color", Color("6f8996"))
-	left.add_child(rebind_note)
 
 	_add_section(right, "VIDÉO")
 	_add_toggle(right, "Plein écran", "fullscreen")
