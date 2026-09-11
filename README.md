@@ -10,6 +10,8 @@ The project runs locally without virtual machines, containers, paid services, or
 
 The project is an early playable alpha. The current version includes:
 
+- A furnished workplace with glazed partitions, meeting and staging areas, textured materials, shared UI styling and real-model inventory thumbnails
+- Metre-scale equipment, numbered RJ45 sockets, curved cables, tabletop placement and subtle spatial sound
 - A first-person company building: server room, corridor, open space offices, reception, entrance, break room, and a technical closet with the operator WAN entry
 - An authoritative logical network model: interface and line protocol states, IPv4 subnets, static routing with longest prefix match, default gateways, access VLANs, trunks, return path checks, and clear failure reasons
 - Distinct procedural models for routers, switches, access points, firewalls, computers, servers, and NAS devices, plus a 19 inch patch rack and a work table
@@ -88,6 +90,7 @@ Open the `game/` directory with Godot and run the project. The game can also sta
 - Mouse: look around
 - `Tab`: open the equipment inventory
 - `E`: place the selected equipment
+- Hold right click: precision view for small connectors
 - Left click on a port: start or complete a cable connection, or unplug an occupied port
 - `T`: open an equipment console or interact with the technician laptop
 - `X`: remove the targeted equipment (its cables are unplugged first)

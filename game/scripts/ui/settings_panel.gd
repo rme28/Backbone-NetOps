@@ -4,10 +4,11 @@ extends PanelContainer
 signal closed
 
 func _ready() -> void:
+	theme = preload("res://scripts/ui/design_system.gd").get_theme()
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.025, 0.055, 0.075, 0.98)
-	style.border_color = Color("34708e")
+	style.border_color = Color("36545a")
 	style.set_border_width_all(2)
 	style.content_margin_left = 50
 	style.content_margin_right = 50
@@ -82,7 +83,7 @@ func _add_section(parent: VBoxContainer, text: String) -> void:
 	var label := Label.new()
 	label.text = text
 	label.add_theme_font_size_override("font_size", 19)
-	label.add_theme_color_override("font_color", Color("78d4ff"))
+	label.add_theme_color_override("font_color", Color("8bc6b5"))
 	parent.add_child(label)
 	parent.add_child(HSeparator.new())
 

@@ -31,5 +31,38 @@ func run(room: Node3D) -> void:
 		if hit.is_empty() or hit.collider.get_meta("device_name", "") != "SW-CORE" or hit.collider.get_meta("interface_name", "") != key.split("|")[1]:
 			failures.append("port " + key)
 		port_count += 1
+	# Every equipment category, including rotated faces, keeps individually selectable real-size jacks.
+	var categories := ["switch","router","firewall","wireless_router","access_point","pc","server","nas","client_laptop"]
+	for i in categories.size():
+		var category: String = categories[i]
+		var device := "QA-" + category
+		var yaw := (i % 3) * PI / 2
+		room._apply_event_visual({"type":"place_device","name":device,"category":category,"world_pos":[-8.0+i*1.8,0.825,-1.0],"world_yaw":yaw})
+	await room.get_tree().physics_frame
+	await room.get_tree().physics_frame
+	for key in room._interface_positions:
+		if not key.begins_with("QA-"): continue
+		var target: Vector3 = room._interface_positions[key]
+		var direction: Vector3 = room._port_direction(target)
+		var query := PhysicsRayQueryParameters3D.create(target+direction*0.3,target)
+		var hit: Dictionary = room.get_world_3d().direct_space_state.intersect_ray(query)
+		if hit.is_empty() or hit.collider.get_meta("device_name", "") != key.split("|")[0] or hit.collider.get_meta("interface_name", "") != key.split("|")[1]: failures.append("port " + key)
+		port_count += 1
+	room._apply_event_visual({"type":"place_device","name":"QA-TABLE","category":"table","world_pos":[0,0,1.5],"world_yaw":0.0})
+	await room.get_tree().physics_frame
+	room._player.global_position = Vector3(0,1,3)
+	room._player.get_node("Camera3D").look_at(Vector3(0,0.78,1.5),Vector3.UP)
+	room._selected_index = 0
+	room._place_device()
+	var placed: Dictionary = room.get_node("/root/GameState").events.back()
+	if not placed.get("supported",false): failures.append("tabletop placement did not hit support")
+	var device: String = placed.get("name", "")
+	var expected: Vector3 = room._interface_positions.get(device+"|eth0",Vector3.INF)
+	var roundtrip: Dictionary = JSON.parse_string(JSON.stringify(placed))
+	room._apply_event_visual({"type":"remove_device","name":device})
+	await room.get_tree().process_frame
+	room._apply_event_visual(roundtrip)
+	if room._interface_positions.get(device+"|eth0",Vector3.ZERO).distance_to(expected) > 0.001: failures.append("tabletop replay moved port")
+	print("  ok  tabletop placement/replay" if failures.is_empty() else "tabletop/replay inspected")
 	print("INTERIOR %s: %d capsule passages, glass collision, %d port raycasts; failures=%s" % ["PASSED" if failures.is_empty() else "FAILED", passages.size(), port_count, failures])
 	room.get_tree().quit(0 if failures.is_empty() else 1)

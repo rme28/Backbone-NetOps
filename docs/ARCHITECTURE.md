@@ -25,7 +25,7 @@ load. Current event types:
 
 | type | fields |
 |---|---|
-| place_device | name, model, category, world_pos, world_yaw |
+| place_device | name, model, category, world_pos, world_yaw, supported (optional) |
 | add_link | dev1, iface1, dev2, iface2, cable |
 | remove_link | dev1, iface1, dev2, iface2 |
 | remove_device | name (cables must be removed first; the game does this) |
@@ -136,5 +136,26 @@ covers VLANs and gateways that the ns-3 scenario format does not.
 It retains starter equipment coordinates and the event journal. Furniture uses
 shared materials and licensed Kenney GLBs; `docs/THIRD_PARTY_ASSETS.md` lists sources.
 `BACKBONE_INTERIOR_TEST=1 godot --headless --path game scenes/world/server_room.tscn`
-checks player capsule clearance through eight doors, glass collision, and each
-starter switch port by physics raycast. Screenshots are stored in `artifacts/visual/`.
+checks player capsule clearance through eight doors, glass collision, 33 ports
+across the starter switch and all equipment types (including rotated bodies),
+and tabletop placement with JSON replay.
+
+`equipment_art.gd` is the canonical metre-scale model factory used for equipment,
+held previews and inventory thumbnails. Switch/router chassis are 1U (44 mm),
+RJ45 shields 18 mm. Rack mounting keeps five-U service spacing between six
+available slots. `supported=true` on a placement event suppresses its folding
+stand when placed on a physical work surface. NetSim is unchanged.
+
+Static dressing and device details use material batches (MultiMesh); live port
+LEDs remain separate. Opaque walls act as occluders. Mobile Vulkan is the default
+renderer with 2x MSAA; two spot shadow lights provide local contact shadows.
+
+`BACKBONE_VISUAL_TOUR=/absolute/existing/directory` renders seven world views and
+five interfaces, reporting sampled FPS/draw counts. `BACKBONE_CATALOG_ICONS=dir`
+regenerates real-model thumbnails. `BACKBONE_MENU_SCREENSHOT=path.png` captures
+the menu; `BACKBONE_HIDE_HUD=1` hides HUD for the existing screenshot helper.
+Screenshots are stored locally in ignored `artifacts/`.
+
+`soundscape.gd` adds footsteps, UI/connector clicks and local rack fan ambience,
+through the existing Effects/Master buses. Original deterministic WAV assets can
+be regenerated with `python3 tools/generate_audio.py` (standard library only).

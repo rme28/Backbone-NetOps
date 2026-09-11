@@ -2,8 +2,8 @@ extends Control
 
 const GAME_SCENE := "res://scenes/world/server_room.tscn"
 
-const ACCENT := Color("7dd8ff")
-const ACCENT_DIM := Color("2e637e")
+const ACCENT := Color("8bc6b5")
+const ACCENT_DIM := Color("36545a")
 const BG_PANEL := Color(0.045, 0.09, 0.12, 0.95)
 
 var _name_edit: LineEdit
@@ -14,6 +14,7 @@ var _landing_view: Control
 var _mission_view: Control
 
 func _ready() -> void:
+	theme = preload("res://scripts/ui/design_system.gd").get_theme()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_build_background()
 
@@ -46,6 +47,7 @@ func _ready() -> void:
 	stack.add_child(_mission_view)
 
 	_refresh_saves()
+	if not OS.get_environment("BACKBONE_MENU_SCREENSHOT").is_empty(): _dev_menu_screenshot()
 
 
 func _show_landing() -> void:
@@ -61,10 +63,11 @@ func _show_mission_select() -> void:
 # --- Ecran d'accueil ---------------------------------------------------------
 
 func _build_landing_view() -> Control:
-	var center := CenterContainer.new()
+	var center := HBoxContainer.new()
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	var buttons := VBoxContainer.new()
-	buttons.custom_minimum_size = Vector2(420, 0)
+	buttons.custom_minimum_size = Vector2(360, 0)
+	buttons.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	buttons.add_theme_constant_override("separation", 14)
 	center.add_child(buttons)
 
@@ -72,8 +75,6 @@ func _build_landing_view() -> Control:
 	play.pressed.connect(_show_mission_select)
 	buttons.add_child(play)
 
-	var online := _disabled_button("JOUER EN LIGNE   (prochainement)")
-	buttons.add_child(online)
 
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(0, 8)
@@ -106,7 +107,7 @@ func _build_mission_view() -> Control:
 	columns.add_theme_constant_override("separation", 30)
 	root.add_child(columns)
 
-	var new_card := _card("NOUVELLE MISSION", "▹")
+	var new_card := _card("NOUVELLE INFRASTRUCTURE", "▹")
 	new_card.custom_minimum_size = Vector2(500, 0)
 	columns.add_child(new_card)
 	var new_body := new_card.get_child(0)
@@ -157,18 +158,27 @@ func _build_background() -> void:
 	bg.color = Color("060d13")
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
-	# Bandes horizontales subtiles + repere vertical, comme le faux-plancher du jeu.
-	for index in 10:
-		var line := ColorRect.new()
-		line.color = Color(ACCENT_DIM.r, ACCENT_DIM.g, ACCENT_DIM.b, 0.09)
-		line.position = Vector2(0, 40 + index * 90)
-		line.size = Vector2(4000, 1)
-		bg.add_child(line)
-	var glow := ColorRect.new()
-	glow.color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.05)
-	glow.size = Vector2(900, 900)
-	glow.position = Vector2(-250, -350)
-	bg.add_child(glow)
+	if ResourceLoader.exists("res://assets/art/menu-background.png"):
+		var picture := TextureRect.new()
+		picture.texture = load("res://assets/art/menu-background.png")
+		picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		picture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		picture.set_anchors_preset(Control.PRESET_FULL_RECT)
+		picture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bg.add_child(picture)
+	var shade := TextureRect.new()
+	var gradient := Gradient.new()
+	gradient.set_color(0, Color(0.025,0.055,0.065,0.98))
+	gradient.set_color(1, Color(0.025,0.055,0.065,0.25))
+	var texture := GradientTexture2D.new()
+	texture.gradient = gradient
+	texture.fill_from = Vector2.ZERO
+	texture.fill_to = Vector2(1,0)
+	shade.texture = texture
+	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bg.add_child(shade)
+
 
 
 func _build_header() -> Control:
@@ -184,7 +194,7 @@ func _build_header() -> Control:
 	title.add_theme_constant_override("outline_size", 0)
 	brand.add_child(title)
 	var subtitle := Label.new()
-	subtitle.text = "BUILD  •  CONFIGURE  •  TROUBLESHOOT"
+	subtitle.text = "CONSTRUIRE. CONNECTER. COMPRENDRE."
 	subtitle.add_theme_font_size_override("font_size", 15)
 	subtitle.add_theme_color_override("font_color", ACCENT)
 	subtitle.add_theme_constant_override("outline_size", 0)
@@ -202,7 +212,7 @@ func _build_header() -> Control:
 	badge_style.content_margin_bottom = 7
 	badge.add_theme_stylebox_override("panel", badge_style)
 	var version := Label.new()
-	version.text = "ALPHA 0.5.0 DEV  /  NETSIM ENGINE"
+	version.text = "ALPHA 0.5.0"
 	version.add_theme_font_size_override("font_size", 13)
 	version.add_theme_color_override("font_color", Color("9fd4ee"))
 	badge.add_child(version)
@@ -270,8 +280,8 @@ func _primary_button(text: String) -> Button:
 	button.add_theme_color_override("font_hover_color", Color("04141c"))
 	button.add_theme_color_override("font_pressed_color", Color("04141c"))
 	button.add_theme_stylebox_override("normal", _button_style(ACCENT, ACCENT))
-	button.add_theme_stylebox_override("hover", _button_style(Color("9de4ff"), Color("9de4ff")))
-	button.add_theme_stylebox_override("pressed", _button_style(Color("5fb8e0"), Color("5fb8e0")))
+	button.add_theme_stylebox_override("hover", _button_style(Color("aed9c9"), Color("aed9c9")))
+	button.add_theme_stylebox_override("pressed", _button_style(Color("73ad9d"), Color("73ad9d")))
 	button.add_theme_stylebox_override("focus", _button_style(ACCENT, Color("f0fbff")))
 	return button
 
@@ -375,3 +385,10 @@ func _on_delete_selected() -> void:
 	if selected.is_empty(): return
 	GameState.delete_save(_saves_list.get_item_text(selected[0]))
 	_refresh_saves()
+
+
+func _dev_menu_screenshot() -> void:
+	await get_tree().create_timer(1.0).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(OS.get_environment("BACKBONE_MENU_SCREENSHOT"))
+	get_tree().quit()

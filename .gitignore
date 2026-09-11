@@ -24,4 +24,4 @@ game/.godot/
 game/.godot/**
 
 # Local visual QA renders
-artifacts/visual/
+artifacts/

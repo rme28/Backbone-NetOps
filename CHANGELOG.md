@@ -8,6 +8,12 @@ Versions follow SemVer with an alpha pre-release channel until the project reach
 
 ### Added
 
+- Workplace art pass: glazed server/operations rooms, meeting area, staging benches, window bays, furnished offices, reception and kitchenette
+- Consistent metre-scale equipment with chamfered enclosures, 18 mm RJ45 connectors, numbered ports and shared inventory thumbnails
+- Curved single-mesh cables, correctly oriented boots, precision view (right click) and hovered-port outline
+- Shared menu/terminal/inventory theme and original subtle footsteps, connector/UI clicks and spatial fan ambience
+- Tabletop placement retained through event replay; capsule/connector/replay regression checks and renderer screenshot tour
+
 - Authoritative logical network model (NetSim): line protocol states, IPv4 subnets, longest prefix routing, host default gateways, access VLANs, trunks with allowed lists, forward and return path checking, loop detection, and clear failure reasons
 - New terminal commands, all wired to the simulation: vlan, name, no vlan, switchport mode access, switchport mode trunk, switchport access vlan, switchport trunk allowed vlan, ip default-gateway, no ip route, show vlan brief, show interfaces, traceroute
 - show ip interface brief now reports both Status and Protocol columns
@@ -24,6 +30,9 @@ Versions follow SemVer with an alpha pre-release channel until the project reach
 - DHCP: hosts accept ip address dhcp, routers and servers serve one line pools (ip dhcp pool NETWORK/PREFIX gateway A.B.C.D); leases resolve through the layer 2 domain, appear in show ip interface brief, and provide the default gateway
 
 ### Changed
+
+- Mobile Vulkan renderer, 2x MSAA, spatial static batching and wall occlusion; sampled 52–61 FPS at 1080p on the tested Quadro K2100M
+- Decorative furniture is consistently scaled and uses a shared material palette; prominent fixtures no longer overexpose
 
 - ping now runs against the logical model with instant feedback, real failure reasons, and the layer 3 path
 - Held item preview is smaller and less intrusive

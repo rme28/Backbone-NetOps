@@ -1,5 +1,7 @@
 # Session progress
 
+> New visual work and current tested state: see [DEV_PROGRESS.md](DEV_PROGRESS.md). This file preserves the previous technical handover.
+
 Working file for session handover. Branch: custom-cli. All commits tested.
 
 ## Done (this session, committed)

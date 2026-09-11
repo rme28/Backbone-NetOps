@@ -1,10 +1,10 @@
 [
 	{"id":"switch","section":"network","kind":"device","label":"Switch L2","description":"Commutation Ethernet, 6 ports.","model":"switch_l2","placeable":true},
 	{"id":"switch_l3","section":"network","kind":"device","label":"Switch Multilayer","description":"Commutation et routage inter-VLAN.","model":"switch_l3","placeable":true},
-	{"id":"wireless_router","section":"network","kind":"device","label":"Routeur Wi-Fi","description":"Routage filaire et réseau sans-fil.","model":"wireless_router","placeable":true},
-	{"id":"router","section":"network","kind":"device","label":"Routeur","description":"Routage IPv4 et protocoles dynamiques.","model":"router","placeable":true},
-	{"id":"firewall","section":"network","kind":"device","label":"Firewall","description":"Filtrage, zones et NAT.","model":"firewall","placeable":true},
-	{"id":"access_point","section":"network","kind":"device","label":"Point d'accès","description":"Accès Wi-Fi relié au réseau filaire.","model":"access_point","placeable":true},
+	{"id":"wireless_router","section":"network","kind":"device","label":"Routeur Wi-Fi","description":"Routeur Ethernet à antennes. Radio Wi-Fi à venir.","model":"wireless_router","placeable":true},
+	{"id":"router","section":"network","kind":"device","label":"Routeur","description":"Routage IPv4, passerelles et routes statiques.","model":"router","placeable":true},
+	{"id":"firewall","section":"network","kind":"device","label":"Firewall","description":"Appliance réseau routée. Filtrage et NAT à venir.","model":"firewall","placeable":true},
+	{"id":"access_point","section":"network","kind":"device","label":"Point d'accès","description":"Pont Ethernet compact. Radio Wi-Fi à venir.","model":"access_point","placeable":true},
 	{"id":"rack","section":"network","kind":"device","label":"Baie de brassage","description":"Structure 19 pouces. Vise-la et pose un équipement (E) pour le racker automatiquement.","model":"rack","placeable":true},
 
 	{"id":"nas","section":"systems","kind":"device","label":"NAS","description":"Stockage réseau multi-baies.","model":"nas","placeable":true},

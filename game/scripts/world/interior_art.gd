@@ -79,6 +79,11 @@ func build() -> void:
 	partition(Vector3(3.3, 0, 5.0), 7.0, PI / 2, true)
 	box(Vector3(6.6, 0.013, 5.3), Vector3(6.4, 0.015, 7.5), "carpet")
 	meeting(Vector3(6.8, 0, 5.5))
+	# Assembly island, anchored to the west wall; center aisle remains free.
+	room._build_office_desk(Vector3(-6.7, 0, 0.5), 0)
+	room._build_office_desk(Vector3(-4.5, 0, 0.5), 0)
+	box(Vector3(-5.6, 0.012, 0.7), Vector3(5.5, 0.014, 3.0), "carpet")
+	prop("coatRackStanding", Vector3(-9.2, 0, 2.8), 0, 1.7)
 	# South-west staging area for future deployments.
 	workbench(Vector3(-7.5, 0, 7.9))
 	prop("bookcaseOpen", Vector3(-9.3, 0, 5.7), PI / 2, 1.8)
@@ -171,6 +176,16 @@ func south_details() -> void:
 	prop("loungeDesignSofa", Vector3(4.4, 0, 19.6), PI / 2, 1.4)
 	prop("tableCoffee", Vector3(5.8, 0, 19.6), 0, 1.15)
 	prop("plantSmall1", Vector3(5.8, 0.5, 19.6), 0, 0.6)
+	window_bay(Vector3(9.84, 1.8, 18.7), -PI / 2)
+	box(Vector3(3.13, 1.5, 17.8), Vector3(0.05, 2.6, 3.6), "metal")
+	room._add_signage(Vector3(3.18, 1.9, 17.8), "BACKBONE  /  CONNECTED WORKPLACES", Color("e0d3b8"), PI / 2)
+	prop("plantSmall1", Vector3(6.9, 1.15, 17.1), 0, 0.6)
+	box(Vector3(5.5, 1.38, 16.8), Vector3(0.55, 0.34, 0.035), "metal")
+	box(Vector3(5.5, 1.21, 16.8), Vector3(0.06, 0.2, 0.08), "metal")
+	room._add_display(room, Vector3(5.5, 1.38, 16.823), Vector2(0.51, 0.3))
+	# Entry door mullions and pull handles, fixed architectural entrance.
+	for x in [6.45, 7.5, 8.55]: box(Vector3(x, 1.25, 20.99), Vector3(0.06, 2.5, 0.04), "trim")
+	for x in [7.36, 7.64]: box(Vector3(x, 1.1, 20.94), Vector3(0.025, 0.42, 0.045), "wall")
 	# Warm timber reception fascia.
 	for i in 27: box(Vector3(4.44 + i * 0.09, 0.57, 16.325), Vector3(0.035, 1.0, 0.04), "wood")
 	for x in [11.8, 12.8, 13.8]: prop("kitchenCabinetDrawer", Vector3(x, 0, -4.0), 0, 1.25)
@@ -189,3 +204,39 @@ func window_bay(pos: Vector3, yaw: float) -> void:
 	for x in [-1.44, 0.0, 1.44]: room._add_local_box(root, Vector3(x, 0, 0.045), Vector3(0.065, 1.7, 0.09), mats["metal"])
 	for y in [-0.85, 0.85]: room._add_local_box(root, Vector3(0, y, 0.08), Vector3(2.95, 0.075, 0.2), mats["wall"])
 	for i in 12: room._add_local_box(root, Vector3(0, 0.74 - i * 0.13, 0.07), Vector3(2.8, 0.025, 0.095), mats["ceiling"])
+
+## Batch static box dressing into spatial MultiMeshes; collisions stay in place.
+## Cell-local batches keep frustum culling useful. Glass is left separately sorted.
+func optimize_static() -> void:
+	var groups: Dictionary = {}
+	_collect_boxes(room, groups)
+	for key in groups:
+		var entries: Array = groups[key]
+		if entries.size() < 3: continue
+		var source: MeshInstance3D = entries[0]
+		var mesh := BoxMesh.new()
+		mesh.size = Vector3.ONE
+		mesh.material = source.mesh.material
+		var multi := MultiMesh.new()
+		multi.transform_format = MultiMesh.TRANSFORM_3D
+		multi.mesh = mesh
+		multi.instance_count = entries.size()
+		var batch := MultiMeshInstance3D.new()
+		batch.multimesh = multi
+		batch.name = "StaticBatch"
+		room.add_child(batch)
+		for i in entries.size():
+			var item: MeshInstance3D = entries[i]
+			multi.set_instance_transform(i, item.global_transform.scaled_local(item.mesh.size))
+			item.queue_free()
+
+func _collect_boxes(root: Node, groups: Dictionary) -> void:
+	if root.has_meta("device_name") or root is CharacterBody3D: return
+	if root is MeshInstance3D and root.mesh is BoxMesh:
+		var mat: Material = root.mesh.material
+		if mat is StandardMaterial3D and mat.transparency == BaseMaterial3D.TRANSPARENCY_DISABLED:
+			var pos: Vector3 = root.global_position
+			var key := "%s/%d/%d" % [mat.get_instance_id(), floori(pos.x / 5), floori(pos.z / 5)]
+			if not groups.has(key): groups[key] = []
+			groups[key].append(root)
+	for child in root.get_children(): _collect_boxes(child, groups)
