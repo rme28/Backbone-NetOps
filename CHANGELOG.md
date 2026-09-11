@@ -6,6 +6,31 @@ Versions follow SemVer with an alpha pre-release channel until the project reach
 
 ## [Unreleased]
 
+### Added
+
+- Authoritative logical network model (NetSim): line protocol states, IPv4 subnets, longest prefix routing, host default gateways, access VLANs, trunks with allowed lists, forward and return path checking, loop detection, and clear failure reasons
+- New terminal commands, all wired to the simulation: vlan, name, no vlan, switchport mode access, switchport mode trunk, switchport access vlan, switchport trunk allowed vlan, ip default-gateway, no ip route, show vlan brief, show interfaces, traceroute
+- show ip interface brief now reports both Status and Protocol columns
+- Cable disconnection: click an occupied port to unplug it, journaled and replayable
+- Port status LEDs on every device: green when the link is up, amber when cabled but down
+- Contextual action prompt above the crosshair (connect, unplug, open console, rack)
+- South building wing: corridor, open space offices with desks, reception, entrance, and a technical closet with the operator WAN entry point
+- Starter infrastructure seeded on new games through regular journal events (two racks, a core switch, an office workstation)
+- Network related objectives: first cable, first active link, first ping, ping across a router
+- Scenario query API documented in docs/ARCHITECTURE.md, plus a headless model test suite and a full runtime selftest
+- Switch and host interfaces now start enabled like real hardware; routers still boot shut down
+
+### Changed
+
+- ping now runs against the logical model with instant feedback, real failure reasons, and the layer 3 path
+- Held item preview is smaller and less intrusive
+- Signage, lighting, and layout polish across the facility
+
+### Fixed
+
+- Terminal auto refresh dead code removed
+- Racked and unplugged interface bookkeeping stays consistent after save replay
+
 ## [0.4.0-alpha] - 2026-08-23
 
 ### Added

@@ -139,6 +139,70 @@ func _ready() -> void:
 	if not screenshot_path.is_empty():
 		_run_dev_screenshot(screenshot_path)
 
+	# Autotest de bout en bout (dev uniquement, BACKBONE_SELFTEST=1) : execute
+	# le vrai parcours joueur (pose, cablage, commandes terminal, ping) dans le
+	# runtime complet et quitte avec un code d'erreur si un comportement casse.
+	if OS.get_environment("BACKBONE_SELFTEST") == "1":
+		_run_selftest.call_deferred()
+
+
+func _run_selftest() -> void:
+	var failures: Array[String] = []
+	var check := func(name: String, condition: bool) -> void:
+		print(("  ok   " if condition else "  FAIL ") + name)
+		if not condition: failures.append(name)
+
+	# Deux PC cables sur le switch de depart SW-CORE.
+	for setup in [["PC-A", 4.0], ["PC-B", 5.2]]:
+		_apply_event_visual({"type": "place_device", "name": setup[0], "model": "desktop",
+			"category": "pc", "world_pos": [setup[1], 0.41, -2.0], "world_yaw": 0.0})
+	GameState.record({"type": "add_link", "dev1": "PC-A", "iface1": "eth0", "dev2": "SW-CORE", "iface2": "eth0", "cable": "rj45"})
+	GameState.record({"type": "add_link", "dev1": "PC-B", "iface1": "eth0", "dev2": "SW-CORE", "iface2": "eth1", "cable": "rj45"})
+	_sync_netsim()
+	check.call("liens proto up (defauts switch/pc)", NetSim.link_protocol_up("PC-A", "eth0") and NetSim.link_protocol_up("PC-B", "eth0"))
+
+	# Configuration IP des PC via la vraie couche terminal.
+	for setup in [["PC-A", "10.0.0.1"], ["PC-B", "10.0.0.2"]]:
+		_open_terminal(setup[0])
+		for cmd in ["configure terminal", "interface eth0", "ip address %s 255.255.255.0" % setup[1], "no shutdown", "end"]:
+			_execute_terminal_command(cmd)
+		_close_terminal()
+	check.call("ip configuree via terminal", NetSim.ip_configured("PC-A", "eth0"))
+	check.call("ping PC-A -> PC-B", NetSim.can_reach("PC-A", "10.0.0.2"))
+
+	# Isolation VLAN via le terminal du switch.
+	_open_terminal("SW-CORE")
+	for cmd in ["configure terminal", "vlan 10", "exit", "interface eth0", "switchport access vlan 10", "end"]:
+		_execute_terminal_command(cmd)
+	_close_terminal()
+	check.call("vlan 10 existe", NetSim.vlan_exists("SW-CORE", 10))
+	check.call("vlan isole le ping", not NetSim.can_reach("PC-A", "10.0.0.2"))
+
+	# Retour au meme VLAN puis debranchement physique.
+	_open_terminal("SW-CORE")
+	for cmd in ["configure terminal", "interface eth1", "switchport access vlan 10", "end"]:
+		_execute_terminal_command(cmd)
+	_close_terminal()
+	check.call("meme vlan retablit le ping", NetSim.can_reach("PC-A", "10.0.0.2"))
+	_disconnect_link("PC-B", "eth0")
+	check.call("debranchement coupe le ping", not NetSim.can_reach("PC-A", "10.0.0.2"))
+	check.call("port libere apres debranchement", not ("eth0" in _used_interfaces.get("PC-B", [])))
+
+	# Ping via la commande terminal (journalise ping_ok pour les objectifs).
+	GameState.record({"type": "add_link", "dev1": "PC-B", "iface1": "eth0", "dev2": "SW-CORE", "iface2": "eth1", "cable": "rj45"})
+	_sync_netsim()
+	_open_terminal("PC-A")
+	_execute_terminal_command("ping 10.0.0.2")
+	_close_terminal()
+	var has_ping_event := false
+	for event in GameState.events:
+		if event.get("type", "") == "ping_ok": has_ping_event = true
+	check.call("ping_ok journalise", has_ping_event)
+	check.call("objectif premier ping accompli", Objectives.is_completed("first_ping"))
+
+	print("SELFTEST %s (%d checks)" % ["PASSED" if failures.is_empty() else "FAILED", 10])
+	get_tree().quit(0 if failures.is_empty() else 1)
+
 
 func _run_dev_screenshot(path: String) -> void:
 	var setup_script := OS.get_environment("BACKBONE_SCREENSHOT_SETUP")
