@@ -2,15 +2,16 @@
 
 **The ultimate network engineer simulator.**
 
-Backbone NetOps is a 3D first-person network simulation game built with Godot 4 and ns-3. Walk through a server room, install equipment, connect exact interfaces, configure devices from an interactive command line, and complete professional network labs.
+Backbone NetOps is a 3D first-person network simulation game built with Godot 4. Walk through a small company building, install equipment, connect exact ports, configure devices from a realistic command line, and build a working infrastructure. Every command and every cable affects a real logical network model: what should not work, does not work, for an understandable reason.
 
 The project runs locally without virtual machines, containers, paid services, or proprietary network software.
 
-## Current Status: Alpha 0.4.0
+## Current Status: Alpha 0.5.0 (development)
 
 The project is an early playable alpha. The current version includes:
 
-- A first-person 3D server room with lighting, raised flooring, work areas, equipment carts, and a small break room annex
+- A first-person company building: server room, corridor, open space offices, reception, entrance, break room, and a technical closet with the operator WAN entry
+- An authoritative logical network model: interface and line protocol states, IPv4 subnets, static routing with longest prefix match, default gateways, access VLANs, trunks, return path checks, and clear failure reasons
 - Distinct procedural models for routers, switches, access points, firewalls, computers, servers, and NAS devices, plus a 19 inch patch rack and a work table
 - Visible and selectable network interfaces
 - Port-to-port cabling with RJ45 and optical cable types
@@ -19,8 +20,10 @@ The project is an early playable alpha. The current version includes:
 - Routers, L2 switches, multilayer switches, wireless routers, firewalls, and access points
 - Desktop computers, servers, NAS devices, a client laptop, and a unique technician laptop
 - An interactive network command line with command history, shortcuts, contextual help, and Tab completion
-- Per-device interface configuration, IP addressing, static routes, and administrative state
-- A local ns-3 simulation engine for links, switching, routing, and ICMP tests
+- Per-device interface configuration, IP addressing, static routes, VLANs, trunks, default gateways, and administrative state
+- ping and traceroute with instant feedback, the layer 3 path, and real failure reasons
+- Cable disconnection, device removal, and port status LEDs driven by the simulation
+- An optional local ns-3 engine as a deep simulation backend
 - Saved games based on a replayable event journal
 - Objectives, score, optional rewards, and the B-Coin currency
 - A technician hub with mail, jobs, shop, dashboard, and settings sections
@@ -38,7 +41,7 @@ The project has three main components:
 - `bridge/`: local Python service connecting Godot to the simulation engine
 - `engine/ns3/`: Backbone NetOps simulation program compiled with ns-3
 
-Godot remains responsible for the game state and presentation. The bridge converts the active in-game topology into a simulation scenario. ns-3 executes the network test and returns its result to the game.
+Gameplay logic runs on an authoritative network model inside the game (see docs/ARCHITECTURE.md). The bridge and the ns-3 program remain available as an optional deep simulation backend. Scenario and mission developers should start with docs/ARCHITECTURE.md.
 
 ## Requirements
 
@@ -85,8 +88,9 @@ Open the `game/` directory with Godot and run the project. The game can also sta
 - Mouse: look around
 - `Tab`: open the equipment inventory
 - `E`: place the selected equipment
-- Left click on a port: start or complete a cable connection
+- Left click on a port: start or complete a cable connection, or unplug an occupied port
 - `T`: open an equipment console or interact with the technician laptop
+- `X`: remove the targeted equipment (its cables are unplugged first)
 - `Escape`: close the current interface or open the pause menu
 - Up and Down arrows in the terminal: browse command history
 - `Tab` in the terminal: complete a command
@@ -107,7 +111,23 @@ end
 show ip interface brief
 show ip route
 ping 10.0.1.2
+traceroute 10.0.1.2
 ```
+
+On switches, VLANs use the same conventions:
+
+```text
+vlan 10
+name USERS
+interface eth0
+switchport access vlan 10
+interface eth5
+switchport mode trunk
+switchport trunk allowed vlan 10,20
+show vlan brief
+```
+
+Hosts accept `ip default-gateway A.B.C.D` so routed pings answer correctly.
 
 Common abbreviations such as `sh run`, `conf t`, `int eth0`, and `ip add` are supported.
 

@@ -28,6 +28,7 @@ load. Current event types:
 | place_device | name, model, category, world_pos, world_yaw |
 | add_link | dev1, iface1, dev2, iface2, cable |
 | remove_link | dev1, iface1, dev2, iface2 |
+| remove_device | name (cables must be removed first; the game does this) |
 | ping_ok | src, dst, hops (progress marker, no visual effect) |
 
 Device configuration (IP, VLANs, routes...) lives in
