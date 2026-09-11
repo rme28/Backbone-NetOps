@@ -19,6 +19,20 @@ const TERMINAL_COMMANDS := [
 	"switchport access vlan", "switchport trunk allowed vlan",
 ]
 
+## Etat initial d'une nouvelle partie : deux baies contre le mur nord de la
+## salle serveur, un switch deja racke, et un poste bureautique dans l'open
+## space. Simple liste d'evenements du journal, remplacable par un scenario.
+const STARTER_EVENTS := [
+	{"type": "place_device", "name": "BAIE-A", "model": "rack", "category": "rack",
+		"world_pos": [-6.0, 0.95, -8.6], "world_yaw": 0.0},
+	{"type": "place_device", "name": "BAIE-B", "model": "rack", "category": "rack",
+		"world_pos": [-4.2, 0.95, -8.6], "world_yaw": 0.0},
+	{"type": "place_device", "name": "SW-CORE", "model": "switch_l2", "category": "switch",
+		"world_pos": [-6.0, 0.2, -8.6], "world_yaw": 0.0},
+	{"type": "place_device", "name": "PC-BUREAU1", "model": "desktop", "category": "pc",
+		"world_pos": [-7.5, 0.41, 15.6], "world_yaw": 3.14159},
+]
+
 var _paused := false
 
 var _player: CharacterBody3D
@@ -26,6 +40,7 @@ var _status_label: Label
 var _feedback_label: Label
 var _help_label: Label
 var _inspection_label: Label
+var _context_label: Label
 var _pause_menu: CanvasLayer
 var _settings_overlay: SettingsPanel
 var _score_label: Label
@@ -100,6 +115,13 @@ func _ready() -> void:
 
 	GameState.settings_changed.connect(_on_settings_changed)
 	_on_settings_changed()
+
+	# Nouvelle partie : on seede une petite infrastructure de depart via des
+	# evenements normaux du journal. C'est exactement le mecanisme qu'un futur
+	# systeme de scenarios utilisera pour definir l'etat initial d'une mission.
+	if GameState.events.is_empty():
+		for event in STARTER_EVENTS:
+			GameState.events.append(event.duplicate(true))
 
 	# Reconstruit immediatement les visuels 3D depuis la sauvegarde (sans PT).
 	_rebuild_visuals_from_save()
@@ -611,6 +633,19 @@ func _build_ui() -> void:
 	_inspection_label.add_theme_stylebox_override("normal", inspect_style)
 	_inspection_label.visible = false
 	layer.add_child(_inspection_label)
+
+	# Indication contextuelle discrete, centree au-dessus du reticule.
+	_context_label = Label.new()
+	_context_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_context_label.position = Vector2(-260, -140)
+	_context_label.custom_minimum_size = Vector2(520, 0)
+	_context_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_context_label.add_theme_font_size_override("font_size", 15)
+	_context_label.add_theme_color_override("font_color", Color("cfeaff"))
+	_context_label.add_theme_constant_override("outline_size", 4)
+	_context_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
+	_context_label.visible = false
+	layer.add_child(_context_label)
 
 	add_child(layer)
 	_update_help_text()
@@ -2505,6 +2540,7 @@ func _raycast_target() -> Dictionary:
 func _update_inspection_panel() -> void:
 	var hit := _raycast_target()
 	var device_name: String = hit.get("device", "")
+	_update_context_prompt(hit)
 	if device_name.is_empty():
 		_inspection_label.visible = false
 		return
@@ -2519,13 +2555,49 @@ func _update_inspection_panel() -> void:
 	for iface in interfaces:
 		var used: bool = iface in _used_interfaces.get(device_name, [])
 		var marker: String = ">" if iface == targeted else " "
-		var link_state: String = "CABLE" if used else "LIBRE"
+		var link_state: String = "LIEN" if NetSim.link_protocol_up(device_name, iface) \
+			else ("CABLE" if used else "LIBRE")
 		var admin_state: String = ""
 		if _device_configs.has(device_name):
 			var state: Dictionary = _device_configs[device_name]["interfaces"].get(iface, {})
 			admin_state = "DOWN" if state.get("shutdown", true) else "UP"
 		lines.append("%s %-5s  %-5s  %s" % [marker, iface, link_state, admin_state])
 	_inspection_label.text = "\n".join(lines)
+
+
+## Indication d'action centree en bas d'ecran, selon ce que vise le joueur.
+func _update_context_prompt(hit: Dictionary) -> void:
+	var device_name: String = hit.get("device", "")
+	var iface: String = hit.get("interface", "")
+	var text := ""
+	if hit.get("technician_laptop", false):
+		text = "[T] Poste technicien"
+	elif not iface.is_empty():
+		var used: bool = iface in _used_interfaces.get(device_name, [])
+		if not _cable_start.is_empty():
+			if used:
+				text = "Port %s occupe" % iface
+			elif device_name == _cable_start and iface == _cable_start_interface:
+				text = "[Clic] Annuler le branchement"
+			else:
+				text = "[Clic] Brancher sur %s %s" % [device_name, iface]
+		elif used:
+			text = "[Clic] Debrancher %s" % iface
+		else:
+			text = "[Clic] Prendre un cable (%s %s)" % [device_name, iface]
+	elif not device_name.is_empty():
+		var category: String = _device_categories.get(device_name, "")
+		if category == "rack" and not _catalog.is_empty() \
+				and str(_catalog[_selected_index].get("id", "")) in RACKABLE_CATEGORIES:
+			text = "[E] Racker %s ici   [T] Console" % str(_catalog[_selected_index].get("label", ""))
+		elif category in ["rack", "table"]:
+			text = "%s" % device_name
+		else:
+			text = "[T] Console de %s" % device_name
+	elif not _cable_start.is_empty():
+		text = "Cable en main depuis %s %s : vise un port libre" % [_cable_start, _cable_start_interface]
+	_context_label.text = text
+	_context_label.visible = not text.is_empty()
 
 
 # --- Callbacks UI -------------------------------------------------------------
