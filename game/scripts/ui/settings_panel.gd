@@ -69,7 +69,7 @@ func _ready() -> void:
 		["ZQSD", "Déplacement"], ["SOURIS", "Regarder"], ["TAB", "Inventaire"],
 		["E", "Poser l'équipement"], ["T", "Interagir / Console"],
 		["CLIC G.", "Câbler un port"], ["CLIC D.", "Vue de précision (maintenir)"],
-		["ÉCHAP", "Pause"],
+		["CTRL", "Se baisser (maintenir)"], ["ÉCHAP", "Pause"],
 	]:
 		_add_keybind_row(keybinds, bind[0], bind[1])
 

@@ -63,8 +63,8 @@ func build() -> void:
 	partition(Vector3(-6, 0, -3.5), 8.0, 0.0, true)
 	partition(Vector3(4, 0, -3.5), 12.0, 0.0, true)
 	partition(Vector3(-2, 0, -6.75), 6.5, PI / 2, false)
-	room._add_signage(Vector3(-6, 2.65, -3.38), "01  /  NETWORK", Color("bfe4df"))
-	room._add_signage(Vector3(4, 2.65, -3.38), "02  /  OPERATIONS", Color("bfe4df"))
+	room._add_signage(Vector3(-6, 2.88, -3.425), "01  /  NETWORK", Color("bfe4df"))
+	room._add_signage(Vector3(4, 2.88, -3.425), "02  /  OPERATIONS", Color("bfe4df"))
 	# Existing starter equipment stays in place, with working clearance around every face.
 	for x in [-8.2, -2.8]: cooling(Vector3(x, 0, -9.55))
 	cable_tray(Vector3(-6, 2.55, -8.6), 7.0)
@@ -149,17 +149,21 @@ func workbench(pos: Vector3) -> void:
 	box(pos + Vector3(0, 0.25, 0), Vector3(2.8, 0.04, 0.7), "trim")
 	for x in [-0.9, 0.2, 1.0]: prop("cardboardBoxOpen", pos + Vector3(x, 0.3, 0), 0, 0.5)
 	prop("books", pos + Vector3(-1, 0.89, 0), 0, 0.8)
-	room._add_wall_outlet(pos + Vector3(0, 1.08, -0.37))
+	room._add_wall_outlet(Vector3(pos.x, 1.08, -9.895 if pos.z < 0 else 9.895), 0.0 if pos.z < 0 else PI)
 
 func meeting(pos: Vector3) -> void:
 	box(pos + Vector3(0, 0.76, 0), Vector3(2.0, 0.08, 3.0), "wood", true)
 	for z in [-1.1, 1.1]: box(pos + Vector3(0, 0.37, z), Vector3(1.3, 0.74, 0.08), "metal", true)
 	for z in [-0.9, 0.9]:
-		prop("chairDesk", pos + Vector3(-1.45, 0, z), -PI / 2, 1.25)
-		prop("chairDesk", pos + Vector3(1.45, 0, z), PI / 2, 1.25)
+		prop("chairDesk", pos + Vector3(-1.45, 0, z), PI / 2, 1.25)
+		prop("chairDesk", pos + Vector3(1.45, 0, z), -PI / 2, 1.25)
 	prop("plantSmall1", pos + Vector3(0, 0.8, 0), 0, 0.55)
 	box(Vector3(9.82, 1.65, 5.5), Vector3(0.08, 1.1, 2.1), "metal")
-	room._add_signage(Vector3(9.76, 1.65, 5.5), "BACKBONE\nCONNECTED WORKPLACES", Color("bfe4df"), -PI / 2)
+	var screen := Node3D.new()
+	room.add_child(screen)
+	screen.position = Vector3(9.775,1.65,5.5)
+	screen.rotation.y = -PI / 2
+	room._add_display(screen, Vector3.ZERO, Vector2(1.96,0.96))
 
 func south_details() -> void:
 	ceiling_grid(Vector3(0, 0, 17.4), Vector2(20, 7))

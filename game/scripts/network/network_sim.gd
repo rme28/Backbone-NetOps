@@ -86,6 +86,10 @@ func _gateway(dev: String) -> String:
 
 
 ## Adresse effective exposee a l'UI et aux scenarios ("" si non attribuee).
+func effective_gateway(dev: String) -> String:
+	return _gateway(dev)
+
+
 func effective_address(dev: String, iface: String) -> String:
 	return _addr(dev, iface)
 
@@ -373,6 +377,13 @@ func _l2_flood(start_dev: String, start_iface: String) -> Array:
 		var in_iface: String = peer["peer_iface"]
 		var tag: int = frame["tag"]
 		var category := str(_configs.get(in_dev, {}).get("category", ""))
+		if category == "passive":
+			var passive_key := "%s|%s|%d" % [in_dev,in_iface,tag]
+			if visited.has(passive_key): continue
+			visited[passive_key] = true
+			for iface in _configs[in_dev]["interfaces"]:
+				if iface != in_iface: queue.append({"dev":in_dev,"iface":iface,"tag":tag})
+			continue
 		if not (category in L2_CATEGORIES):
 			# Hote ou routeur : ne recoit que les trames untagged.
 			if tag == -1:

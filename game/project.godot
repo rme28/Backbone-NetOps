@@ -53,6 +53,11 @@ interact={
 ]
 }
 
+crouch={
+"deadzone": 0.5,
+"events": [Object(InputEventKey,"physical_keycode":4194326)]
+}
+
 [rendering]
 
 renderer/rendering_method="mobile"

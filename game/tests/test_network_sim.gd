@@ -22,6 +22,7 @@ func _initialize() -> void:
 	_test_routing_loop(sim)
 	_test_queries(sim)
 	_test_dhcp(sim)
+	_test_passive(sim)
 
 	print("")
 	if _failures == 0:
@@ -243,3 +244,14 @@ func _test_dhcp(sim: Node) -> void:
 		[_link("A", "eth0", "SW", "eth0"), _link("B", "eth0", "SW", "eth1")])
 	_check("pas de bail sans serveur", str(sim.effective_address("A", "eth0")).is_empty())
 	_check("pas de connectivite sans bail", not sim.can_reach("A", "10.0.0.2"))
+
+
+func _test_passive(sim: Node) -> void:
+	var configs := {"A":_host("10.0.0.1/24"),"B":_host("10.0.0.2/24"),
+		"RUN":{"category":"passive","interfaces":{"wall":{"shutdown":false},"patch":{"shutdown":false}}}}
+	var links := [_link("A","eth0","RUN","wall"),_link("RUN","patch","B","eth0")]
+	sim.rebuild(configs,links)
+	_check("passive wall-to-patch continuity",sim.can_reach("A","10.0.0.2"))
+	links.pop_back()
+	sim.rebuild(configs,links)
+	_check("unpatched socket cannot reach destination",not sim.can_reach("A","10.0.0.2"))

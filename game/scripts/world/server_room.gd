@@ -100,12 +100,15 @@ var _terminal_mode := "exec"
 var _terminal_interface := ""
 
 
+var _fixed_network: RefCounted
+
 func _ready() -> void:
 	_player = $Player
 	get_viewport().use_occlusion_culling = true
 	_catalog = EquipmentCatalog.load_all()
 	_equipment_art = preload("res://scripts/world/equipment_art.gd").new(self)
 	_build_environment()
+	_fixed_network = preload("res://scripts/world/infrastructure/fixed_network.gd").new(self)
 	_build_room()
 	_build_technician_station()
 	_art.optimize_static()
@@ -429,15 +432,7 @@ func _build_annex_room(wall_mat: Material, ceiling_mat: Material) -> void:
 		var shelf_mat := _material(Color("4a4038"), 0.6, 0.1)
 		_add_box(Vector3(17.7, 0.9, -3.8), Vector3(0.4, 1.8, 0.9), shelf_mat)
 
-	var label := Label3D.new()
-	label.text = "ESPACE PAUSE"
-	label.position = Vector3(14, 2.4, -4.3)
-	label.font_size = 30
-	label.pixel_size = 0.0035
-	label.modulate = Color("f0dfc4")
-	label.no_depth_test = false
-	label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
-	add_child(label)
+	_add_signage(Vector3(14, 2.4, -4.385), "ESPACE PAUSE", Color("f0dfc4"))
 
 
 ## Aile sud du batiment : couloir, open-space bureaux, accueil et local
@@ -459,8 +454,12 @@ func _build_south_wing(wall_mat: Material, ceiling_mat: Material) -> void:
 	_add_zone_light(Vector3(-5, 2.75, 11.8), Color("fff1dc"), 1.8, 8.0)
 	_add_zone_light(Vector3(5, 2.75, 11.8), Color("fff1dc"), 1.8, 8.0)
 	_add_zone_light(Vector3(0, 2.75, 11.8), Color("fff1dc"), 1.6, 7.0)
-	_add_signage(Vector3(-4, 2.5, 13.45), "BUREAUX", Color("e8e2d0"), PI)
-	_add_signage(Vector3(5.5, 2.5, 13.45), "ACCUEIL", Color("e8e2d0"), PI)
+	_add_signage(Vector3(-4, 2.7, 13.485), "BUREAUX", Color("e8e2d0"), PI)
+	_add_signage(Vector3(5.5, 2.7, 13.485), "ACCUEIL", Color("e8e2d0"), PI)
+
+	for opening in [[-4.0, 2.4], [5.5, 5.0]]:
+		_add_box(Vector3(opening[0],2.75,13.6),Vector3(opening[1],0.5,0.2),wall_mat)
+	_add_box(Vector3(-10,2.75,12.2),Vector3(0.2,0.5,2.4),wall_mat)
 
 	# --- Open-space bureaux (x -10..3, z 13.6..21.2) ---
 	_add_box(Vector3(-3.5, -0.1, 17.4), Vector3(13, 0.2, 7.6), office_floor)
@@ -471,8 +470,8 @@ func _build_south_wing(wall_mat: Material, ceiling_mat: Material) -> void:
 	for desk_x in [-7.5, -4.5]:
 		_build_office_desk(Vector3(desk_x, 0, 16.2), 0.0)
 		_build_office_desk(Vector3(desk_x, 0, 19.2), PI)
-	for outlet_x in [-8.0, -6.0, -3.0, 0.0]:
-		_add_wall_outlet(Vector3(outlet_x, 0.35, 13.72))
+	for outlet_x in [-8.0, -6.0, -2.5, 0.0]:
+		_add_wall_outlet(Vector3(outlet_x, 0.35, 13.705))
 	_add_plant(Vector3(1.8, 0, 20.2))
 	_build_printer_corner(Vector3(-9.2, 0, 20.3))
 
@@ -482,7 +481,7 @@ func _build_south_wing(wall_mat: Material, ceiling_mat: Material) -> void:
 	_add_zone_light(Vector3(6.5, 2.75, 17.4), Color("ffedd6"), 1.8, 8.0)
 	_build_reception_desk(Vector3(5.6, 0, 16.6))
 	_add_plant(Vector3(9.2, 0, 14.6))
-	_add_signage(Vector3(6.5, 2.3, 20.9), "BACKBONE CORP", Color("8bc6b5"), PI)
+	_add_signage(Vector3(4.7, 2.3, 21.085), "BACKBONE CORP", Color("8bc6b5"), PI)
 	# Porte d'entree (decor) sur le mur sud.
 	var door_mat := _material(Color("1b2226"), 0.4, 0.4)
 	_add_visual_box(Vector3(7.5, 1.25, 21.08), Vector3(2.2, 2.5, 0.08), door_mat)
@@ -501,11 +500,11 @@ func _build_south_wing(wall_mat: Material, ceiling_mat: Material) -> void:
 	_add_box(Vector3(-12.2, 1.5, 10), Vector3(4.4, 3, 0.2), wall_mat)
 	_add_box(Vector3(-12.2, 1.5, 14), Vector3(4.4, 3, 0.2), wall_mat)
 	_add_zone_light(Vector3(-12.2, 2.7, 12), Color("dceaf2"), 1.5, 6.0)
-	_add_signage(Vector3(-9.85, 2.5, 12), "LOCAL TECHNIQUE", Color("ffd166"), PI / 2.0)
+	_add_signage(Vector3(-9.885, 2.7, 12), "LOCAL TECHNIQUE", Color("ffd166"), PI / 2.0)
 	# Boitier operateur + conduits (decor : le point d'entree WAN du batiment).
 	var box_mat := _material(Color("4a5258"), 0.5, 0.3, true)
 	_add_visual_box(Vector3(-14.2, 1.4, 12), Vector3(0.3, 0.9, 0.7), box_mat)
-	_add_signage(Vector3(-14.0, 2.05, 12), "ARRIVEE OPERATEUR (WAN)", Color("9adf9a"), PI / 2.0)
+	_add_signage(Vector3(-14.285, 2.05, 12), "ARRIVEE OPERATEUR (WAN)", Color("9adf9a"), PI / 2.0)
 	var conduit := _material(Color("35434a"), 0.35, 0.65)
 	_add_visual_box(Vector3(-14.25, 2.5, 12), Vector3(0.12, 1.3, 0.12), conduit)
 	_add_visual_box(Vector3(-12.2, 2.88, 12), Vector3(4.2, 0.1, 0.14), conduit)
@@ -567,10 +566,18 @@ func _build_office_desk(pos: Vector3, yaw: float) -> void:
 	_add_local_box(desk, Vector3(0, 0.67, -0.31), Vector3(1.45, 0.08, 0.04), leg_mat)
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = Vector3(1.6, 0.77, 0.8)
+	shape.size = Vector3(1.6, 0.06, 0.8)
 	col.shape = shape
-	col.position = Vector3(0, 0.385, 0)
+	col.position = Vector3(0, 0.74, 0)
 	desk.add_child(col)
+	for x in [-0.72, 0.72]:
+		for z in [-0.3, 0.3]:
+			var leg_col := CollisionShape3D.new()
+			var leg_shape := BoxShape3D.new()
+			leg_shape.size = Vector3(0.045,0.74,0.045)
+			leg_col.shape = leg_shape
+			leg_col.position = Vector3(x,0.37,z)
+			desk.add_child(leg_col)
 	# Moniteur + clavier (decor).
 	_add_local_box(desk, Vector3(0, 1.02, -0.2), Vector3(0.55, 0.34, 0.03), _material(Color("14181b"), 0.4, 0.4))
 	_add_display(desk, Vector3(0, 1.02, -0.177), Vector2(0.5, 0.29))
@@ -617,13 +624,8 @@ func _build_printer_corner(pos: Vector3) -> void:
 	_add_display(printer,Vector3(0.19,0.28,0.241),Vector2(0.085,0.045))
 
 
-func _add_wall_outlet(pos: Vector3) -> void:
-	var plate := Node3D.new()
-	add_child(plate)
-	plate.position = pos
-	_equipment_art.chassis(plate, Vector3.ZERO, Vector3(0.086,0.086,0.008), _material(Color("c7ceca"),0.8),0.002)
-	for x in [-0.021,0.021]: _equipment_art.jack(plate,Vector3(x,0,0.006))
-	_equipment_art.text(plate,"CAT 6",Vector3(0,0.026,0.005),0.00025)
+func _add_wall_outlet(pos: Vector3, yaw := 0.0) -> void:
+	_fixed_network.outlet(pos, yaw)
 
 
 func _add_plant(pos: Vector3) -> void:
@@ -1664,6 +1666,7 @@ func _add_device_ports(body: Node3D, device_name: String, category: String, comp
 func _port_direction(pos: Vector3) -> Vector3:
 	for key in _interface_positions:
 		if _interface_positions[key].distance_to(pos) < 0.001:
+			if _fixed_network.directions.has(key): return _fixed_network.directions[key]
 			var dev: String = key.get_slice("|", 0)
 			if _device_bodies.has(dev): return _device_bodies[dev].global_basis.z.normalized()
 	return Vector3.BACK
@@ -1847,6 +1850,9 @@ func _close_palette() -> void:
 
 
 func _open_terminal(device_name: String) -> void:
+	if _fixed_network.fixed.has(device_name):
+		_flash_feedback("Brassage passif : relier la prise au port de panneau portant le même numéro.")
+		return
 	_terminal_device = device_name
 	_terminal_open = true
 	_terminal_layer.visible = true
@@ -2654,6 +2660,9 @@ func _remove_targeted_device() -> void:
 	var target: String = hit.get("device", "")
 	if target.is_empty() or hit.get("technician_laptop", false):
 		_flash_feedback("Vise un equipement a retirer")
+		return
+	if _fixed_network.fixed.has(target):
+		_flash_feedback("Équipement fixé au bâtiment : seuls les cordons se retirent.")
 		return
 	if not _device_categories.has(target):
 		return

@@ -6,6 +6,7 @@ extends RefCounted
 ## nouveau modele de materiel est ajoute au catalogue (voir scripts/equipment/catalog.gd).
 
 const BY_CATEGORY := {
+	"passive": ["wall", "patch"],
 	"router": ["eth0", "eth1", "eth2"],
 	"switch": ["eth0", "eth1", "eth2", "eth3", "eth4", "eth5"],
 	"switch_l3": ["eth0", "eth1", "eth2", "eth3", "eth4", "eth5", "eth6", "eth7"],
