@@ -35,6 +35,7 @@ const STARTER_EVENTS := [
 ]
 
 var _paused := false
+var _interior_test: RefCounted
 
 var _player: CharacterBody3D
 var _status_label: Label
@@ -146,6 +147,9 @@ func _ready() -> void:
 	# runtime complet et quitte avec un code d'erreur si un comportement casse.
 	if OS.get_environment("BACKBONE_SELFTEST") == "1":
 		_run_selftest.call_deferred()
+	if OS.get_environment("BACKBONE_INTERIOR_TEST") == "1":
+		_interior_test = preload("res://tests/test_interior.gd").new()
+		_interior_test.run.call_deferred(self)
 
 
 func _run_selftest() -> void:
@@ -247,11 +251,14 @@ func _build_environment() -> void:
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = Color(0.1, 0.11, 0.13)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.3, 0.3, 0.35)
-	env.ambient_light_energy = 0.82
+	env.ambient_light_color = Color("c3d1d5")
+	env.ambient_light_energy = 0.4
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.glow_enabled = true
-	env.fog_enabled = true
+	env.glow_enabled = false
+	env.ssao_enabled = true
+	env.ssao_radius = 0.65
+	env.ssao_intensity = 1.3
+	env.fog_enabled = false
 	env.fog_light_color = Color(0.13, 0.18, 0.2)
 	env.fog_density = 0.003
 	var we := WorldEnvironment.new()
@@ -260,58 +267,16 @@ func _build_environment() -> void:
 
 	var light := DirectionalLight3D.new()
 	light.rotation_degrees = Vector3(-50, -30, 0)
-	light.light_energy = 0.45
+	light.light_energy = 0.25
 	light.shadow_enabled = true
 	add_child(light)
 
 
+var _art: RefCounted
+
 func _build_room() -> void:
-	var floor_mat := _material(Color("20272b"), 0.8, 0.15)
-	var wall_mat := _material(Color("303b40"), 0.9)
-	var ceiling_mat := _material(Color("171d20"), 0.95)
-
-	_add_box(Vector3(0, -0.1, 0), Vector3(20, 0.2, 20), floor_mat)  # sol
-	_add_box(Vector3(0, 1.5, -10), Vector3(20, 3, 0.2), wall_mat)   # mur nord
-	# Mur sud perce d'une porte vers le couloir de l'aile bureaux.
-	_add_box(Vector3(-5.6, 1.5, 10), Vector3(8.8, 3, 0.2), wall_mat)
-	_add_box(Vector3(5.6, 1.5, 10), Vector3(8.8, 3, 0.2), wall_mat)
-	_add_signage(Vector3(0, 2.55, 10.15), "SALLE SERVEUR", Color("7dd8ff"))
-	# Mur est perce d'une porte (2 segments) vers l'annexe pause/bureau.
-	_add_box(Vector3(10, 1.5, -5.75), Vector3(0.2, 3, 8.5), wall_mat)
-	_add_box(Vector3(10, 1.5, 5.75), Vector3(0.2, 3, 8.5), wall_mat)
-	_add_box(Vector3(-10, 1.5, 0), Vector3(0.2, 3, 20), wall_mat)   # mur ouest
-	_add_visual_box(Vector3(0, 3.05, 0), Vector3(20, 0.1, 20), ceiling_mat)
-
-	_build_annex_room(wall_mat, ceiling_mat)
-	_build_south_wing(wall_mat, ceiling_mat)
-
-	# Dalles et joints du faux plancher.
-	var grid_mat := _material(Color("3a464b"), 0.75, 0.25)
-	for x in range(-10, 11, 2):
-		_add_visual_box(Vector3(x, 0.012, 0), Vector3(0.025, 0.015, 20), grid_mat)
-	for z in range(-10, 11, 2):
-		_add_visual_box(Vector3(0, 0.013, z), Vector3(20, 0.015, 0.025), grid_mat)
-
-	# Luminaires industriels au plafond.
-	for x in [-6.0, 0.0, 6.0]:
-		for z in [-6.0, 0.0, 6.0]:
-			var lamp_mat := _material(Color("d8f5ff"), 0.2, 0.0, false, Color("b8ecff"), 3.0)
-			_add_visual_box(Vector3(x, 2.96, z), Vector3(2.4, 0.04, 0.45), lamp_mat)
-			var lamp := OmniLight3D.new()
-			lamp.position = Vector3(x, 2.75, z)
-			lamp.light_color = Color("d7f4ff")
-			lamp.light_energy = 1.45
-			lamp.omni_range = 7.0
-			add_child(lamp)
-
-	# Chemins de câbles muraux et zones de travail au sol.
-	var tray_mat := _material(Color("35434a"), 0.35, 0.65)
-	_add_visual_box(Vector3(0, 2.25, -9.82), Vector3(18, 0.16, 0.18), tray_mat)
-	_add_visual_box(Vector3(-9.82, 2.25, 0), Vector3(0.18, 0.16, 18), tray_mat)
-	var marking := _material(Color("d7a928"), 0.65)
-	for x in [-5.0, 0.0, 5.0]:
-		_add_visual_box(Vector3(x, 0.018, -3.5), Vector3(3.6, 0.018, 0.045), marking)
-		_add_visual_box(Vector3(x, 0.018, 3.5), Vector3(3.6, 0.018, 0.045), marking)
+	_art = preload("res://scripts/world/interior_art.gd").new(self)
+	_art.build()
 
 
 const KENNEY_ASSETS := "res://assets/kenney/"
@@ -327,6 +292,16 @@ func _spawn_kenney_prop(sub_path: String, pos: Vector3, yaw := 0.0, scale_mult :
 	add_child(instance)
 	instance.position = pos
 	instance.rotation.y = yaw
+	if sub_path.get_file().get_basename() in ["chairDesk", "loungeDesignSofa", "tableCoffee", "kitchenCabinetDrawer", "kitchenFridgeSmall", "bookcaseOpen"]:
+		var bounds := _prop_bounds(instance, instance.transform.affine_inverse())
+		var body := StaticBody3D.new()
+		var shape := BoxShape3D.new()
+		shape.size = bounds.size
+		var collider := CollisionShape3D.new()
+		collider.shape = shape
+		collider.position = bounds.get_center()
+		body.add_child(collider)
+		instance.add_child(body)
 	return instance
 
 
@@ -350,8 +325,38 @@ func _load_kenney_prop(sub_path: String, scale_mult: float) -> Node3D:
 	if scene == null:
 		return null
 	var instance := scene.instantiate()
-	instance.scale = Vector3.ONE * scale_mult
+	var heights := {"plantSmall1": 0.55, "pottedPlant": 0.9, "kitchenCabinetDrawer": 0.60, "kitchenFridgeSmall": 0.72, "kitchenCoffeeMachine": 0.35, "books": 0.22, "cardboardBoxClosed": 0.55, "cardboardBoxOpen": 0.55, "tableCoffee": 0.43, "loungeDesignSofa": 0.60}
+	var asset_name := sub_path.get_file().get_basename()
+	var bounds := _prop_bounds(instance)
+	var model_scale := float(heights.get(asset_name, bounds.size.y)) / maxf(bounds.size.y, 0.001)
+	instance.scale = Vector3.ONE * scale_mult * model_scale
+	_harmonize_prop(instance)
 	return instance
+
+
+func _prop_bounds(root: Node3D, parent_transform := Transform3D.IDENTITY) -> AABB:
+	var transform := parent_transform * root.transform
+	var result := AABB()
+	if root is MeshInstance3D:
+		result = transform * root.get_aabb()
+	for child in root.get_children():
+		if child is Node3D:
+			var bounds := _prop_bounds(child, transform)
+			if bounds.size != Vector3.ZERO:
+				result = bounds if result.size == Vector3.ZERO else result.merge(bounds)
+	return result
+
+
+func _harmonize_prop(root: Node) -> void:
+	if root is MeshInstance3D:
+		for i in root.mesh.get_surface_count():
+			var original: Material = root.mesh.surface_get_material(i)
+			if original == null: continue
+			var key := original.resource_name.to_lower()
+			var palette := {"carpet": "344e59", "carpetblue": "344e59", "plant": "467459", "wood": "ad8966", "wooddark": "725c47", "metalmedium": "343f44"}
+			if palette.has(key):
+				root.set_surface_override_material(i, _material(Color(palette[key]), 0.85, 0.0))
+	for child in root.get_children(): _harmonize_prop(child)
 
 
 ## Petite annexe pause/bureau a l'est de la salle serveur, reliee par la porte
@@ -359,15 +364,15 @@ func _load_kenney_prop(sub_path: String, scale_mult: float) -> Node3D:
 ## mobilier utilise les modeles Kenney (CC0, kenney.nl/assets/furniture-kit)
 ## quand disponibles dans assets/kenney/furniture/, sinon des boites codees.
 func _build_annex_room(wall_mat: Material, ceiling_mat: Material) -> void:
-	var floor_mat := _material(Color("2a2420"), 0.85, 0.05)
-	var annex_wall := _material(Color("3d362d"), 0.85, 0.05)
+	var floor_mat := _material(Color("8c7962"), 0.85, 0.05)
+	var annex_wall := _material(Color("c8c4b7"), 0.85, 0.05)
 	_add_box(Vector3(14, -0.1, 0), Vector3(8, 0.2, 9), floor_mat)
 	_add_box(Vector3(14, 1.5, -4.5), Vector3(8, 3, 0.2), annex_wall)
 	_add_box(Vector3(14, 1.5, 4.5), Vector3(8, 3, 0.2), annex_wall)
 	_add_box(Vector3(18, 1.5, 0), Vector3(0.2, 3, 9), annex_wall)
 	_add_visual_box(Vector3(14, 3.05, 0), Vector3(8, 0.1, 9), ceiling_mat)
 
-	var lamp_mat := _material(Color("ffe3b8"), 0.3, 0.0, false, Color("ffd9a0"), 2.2)
+	var lamp_mat := _material(Color("ffe3b8"), 0.3, 0.0, false, Color("ffd9a0"), 0.35)
 	_add_visual_box(Vector3(14, 2.96, 0), Vector3(1.8, 0.04, 0.4), lamp_mat)
 	var lamp := OmniLight3D.new()
 	lamp.position = Vector3(14, 2.7, 0)
@@ -400,8 +405,8 @@ func _build_annex_room(wall_mat: Material, ceiling_mat: Material) -> void:
 	label.font_size = 30
 	label.pixel_size = 0.0035
 	label.modulate = Color("f0dfc4")
-	label.no_depth_test = true
-	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.no_depth_test = false
+	label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
 	add_child(label)
 
 
@@ -411,7 +416,7 @@ func _build_annex_room(wall_mat: Material, ceiling_mat: Material) -> void:
 ## deplacable / modifiable par un futur developpeur de scenarios.
 func _build_south_wing(wall_mat: Material, ceiling_mat: Material) -> void:
 	var corridor_floor := _material(Color("262c31"), 0.8, 0.1)
-	var office_floor := _material(Color("3f4440"), 0.9, 0.0)
+	var office_floor: Material = _art.mats["carpet"]
 	var closet_floor := _material(Color("2b2926"), 0.9, 0.0)
 
 	# --- Couloir (x -10..10, z 10..13.6) ---
@@ -482,21 +487,26 @@ func _add_signage(pos: Vector3, text: String, color: Color, yaw := 0.0) -> void:
 	label.text = text
 	label.position = pos
 	label.rotation.y = yaw
-	label.font_size = 40
-	label.pixel_size = 0.004
+	label.font_size = 32
+	label.pixel_size = 0.0024
 	label.modulate = color
-	label.outline_size = 4
+	label.outline_size = 0
 	label.double_sided = false
+	var plate := _add_visual_box(pos - Vector3(0, 0, 0.015).rotated(Vector3.UP, yaw), Vector3(maxf(0.7, text.length() * 0.048), 0.25, 0.025), _material(Color("263c43")))
+	plate.rotation.y = yaw
 	add_child(label)
 
 
 func _add_zone_light(pos: Vector3, color: Color, energy: float, range_m: float) -> void:
-	var lamp_mat := _material(Color("f5efe2"), 0.3, 0.0, false, color, 2.0)
+	var lamp_mat := _material(Color("a3b4b1"), 0.9).duplicate()
+	lamp_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_add_visual_box(Vector3(pos.x, 2.985, pos.z), Vector3(1.7, 0.045, 0.5), _material(Color("34474b")))
 	_add_visual_box(Vector3(pos.x, 2.96, pos.z), Vector3(1.6, 0.04, 0.4), lamp_mat)
 	var lamp := OmniLight3D.new()
 	lamp.position = pos
 	lamp.light_color = color
-	lamp.light_energy = energy
+	lamp.light_energy = energy * 0.65
+	lamp.shadow_enabled = (pos.distance_to(Vector3(-6, 2.76, -7)) < 0.1 or pos.distance_to(Vector3(-6, 2.75, 17.4)) < 0.1)
 	lamp.omni_range = range_m
 	add_child(lamp)
 
@@ -507,11 +517,14 @@ func _build_office_desk(pos: Vector3, yaw: float) -> void:
 	desk.position = pos
 	desk.rotation.y = yaw
 	add_child(desk)
-	var top_mat := _material(Color("6a6156"), 0.6, 0.1, true)
+	var top_mat: Material = _art.mats["wood"]
 	var leg_mat := _material(Color("2c3134"), 0.4, 0.5)
 	_add_local_box(desk, Vector3(0, 0.74, 0), Vector3(1.6, 0.06, 0.8), top_mat)
 	for x in [-0.72, 0.72]:
-		_add_local_box(desk, Vector3(x, 0.37, 0), Vector3(0.06, 0.74, 0.7), leg_mat)
+		for z in [-0.3, 0.3]:
+			_add_local_box(desk, Vector3(x, 0.37, z), Vector3(0.045, 0.74, 0.045), leg_mat)
+		_add_local_box(desk, Vector3(x, 0.09, 0), Vector3(0.045, 0.04, 0.65), leg_mat)
+	_add_local_box(desk, Vector3(0, 0.67, -0.31), Vector3(1.45, 0.08, 0.04), leg_mat)
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(1.6, 0.8, 0.8)
@@ -519,13 +532,18 @@ func _build_office_desk(pos: Vector3, yaw: float) -> void:
 	col.position = Vector3(0, 0.4, 0)
 	desk.add_child(col)
 	# Moniteur + clavier (decor).
-	var screen_mat := _material(Color("10222c"), 0.3, 0.0, false, Color("1a5a7a"), 1.2)
 	_add_local_box(desk, Vector3(0, 1.02, -0.2), Vector3(0.55, 0.34, 0.03), _material(Color("14181b"), 0.4, 0.4))
-	_add_local_box(desk, Vector3(0, 1.02, -0.185), Vector3(0.5, 0.29, 0.012), screen_mat)
+	_add_display(desk, Vector3(0, 1.02, -0.177), Vector2(0.5, 0.29))
 	_add_local_box(desk, Vector3(0, 0.79, -0.2), Vector3(0.06, 0.04, 0.06), leg_mat)
 	_add_local_box(desk, Vector3(0, 0.78, 0.1), Vector3(0.42, 0.02, 0.14), leg_mat)
-	if _spawn_kenney_prop("furniture/chair.glb", pos + Vector3(0, 0, 0.7).rotated(Vector3.UP, yaw), yaw + PI) == null:
-		pass
+	_spawn_kenney_prop("furniture/chairDesk.glb", pos + Vector3(0.15, 0, 0.82).rotated(Vector3.UP, yaw), yaw + PI, 1.25)
+	_spawn_kenney_prop_local(desk, "furniture/computerKeyboard.glb", Vector3(0, 0.79, 0.13), 0, 0.7)
+	_spawn_kenney_prop_local(desk, "furniture/computerMouse.glb", Vector3(0.4, 0.79, 0.14), 0, 0.65)
+	_spawn_kenney_prop_local(desk, "furniture/plantSmall1.glb", Vector3(-0.6, 0.78, -0.18), 0, 0.4)
+	_add_local_box(desk, Vector3(0.52, 0.79, -0.1), Vector3(0.22, 0.025, 0.3), _material(Color("d1d7c9")))
+	_add_local_box(desk, Vector3(0, 0.86, -0.22), Vector3(0.05, 0.18, 0.05), leg_mat)
+	_add_local_box(desk, Vector3(0, 0.782, -0.22), Vector3(0.28, 0.014, 0.18), leg_mat)
+
 
 
 func _build_reception_desk(pos: Vector3) -> void:
@@ -548,7 +566,7 @@ func _build_printer_corner(pos: Vector3) -> void:
 	_add_visual_box(pos + Vector3(0, 0.78, 0.26), Vector3(0.4, 0.06, 0.1), dark)
 	var led := _material(Color("113322"), 0.4, 0.0, false, Color("2fdd7a"), 1.4)
 	_add_visual_box(pos + Vector3(0.22, 0.95, 0.251), Vector3(0.02, 0.02, 0.01), led)
-	_add_signage(pos + Vector3(0, 1.35, 0.1), "IMPRIMANTE", Color("9aabba"), PI)
+
 
 
 func _add_wall_outlet(pos: Vector3) -> void:
@@ -560,23 +578,31 @@ func _add_wall_outlet(pos: Vector3) -> void:
 
 
 func _add_plant(pos: Vector3) -> void:
-	var pot := MeshInstance3D.new()
-	var pot_mesh := CylinderMesh.new()
-	pot_mesh.height = 0.35
-	pot_mesh.top_radius = 0.22
-	pot_mesh.bottom_radius = 0.17
-	pot_mesh.material = _material(Color("5a4a3a"), 0.7)
-	pot.mesh = pot_mesh
-	pot.position = pos + Vector3(0, 0.175, 0)
-	add_child(pot)
-	var leaves := MeshInstance3D.new()
-	var leaves_mesh := SphereMesh.new()
-	leaves_mesh.radius = 0.38
-	leaves_mesh.height = 0.85
-	leaves_mesh.material = _material(Color("3f6f3f"), 0.85)
-	leaves.mesh = leaves_mesh
-	leaves.position = pos + Vector3(0, 0.75, 0)
-	add_child(leaves)
+	_spawn_kenney_prop("furniture/pottedPlant.glb", pos, pos.x, 1.6)
+
+
+var _desktop_mat: StandardMaterial3D
+func _desktop_material() -> StandardMaterial3D:
+	if _desktop_mat == null:
+		_desktop_mat = StandardMaterial3D.new()
+		_desktop_mat.albedo_texture = load("res://assets/art/desktop.svg")
+		_desktop_mat.emission_enabled = true
+		_desktop_mat.emission_texture = _desktop_mat.albedo_texture
+		_desktop_mat.emission = Color.WHITE
+		_desktop_mat.emission_energy_multiplier = 0.35
+		_desktop_mat.roughness = 0.65
+		_desktop_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	return _desktop_mat
+
+
+func _add_display(parent: Node3D, pos: Vector3, size: Vector2) -> void:
+	var mesh := QuadMesh.new()
+	mesh.size = size
+	mesh.material = _desktop_material()
+	var screen := MeshInstance3D.new()
+	screen.mesh = mesh
+	parent.add_child(screen)
+	screen.position = pos
 
 
 var _material_cache: Dictionary = {}  # cle -> StandardMaterial3D, evite de regenerer les textures de bruit
@@ -646,22 +672,15 @@ func _build_technician_station() -> void:
 	var laptop_mat := _material(Color("2c363d"), 0.3, 0.7)
 	_add_local_box(laptop, Vector3(0, 0, 0.18), Vector3(0.78, 0.055, 0.52), laptop_mat)
 	_add_local_box(laptop, Vector3(0, 0.31, -0.05), Vector3(0.78, 0.58, 0.055), laptop_mat)
-	var screen_mat := _material(Color("102b3a"), 0.25, 0.0, false, Color("17638a"), 1.8)
-	_add_local_box(laptop, Vector3(0, 0.31, -0.083), Vector3(0.69, 0.48, 0.012), screen_mat)
+	_add_display(laptop, Vector3(0, 0.31, -0.015), Vector2(0.69, 0.48))
 	var laptop_col := CollisionShape3D.new()
 	var laptop_shape := BoxShape3D.new()
 	laptop_shape.size = Vector3(0.9, 0.72, 0.65)
 	laptop_col.shape = laptop_shape
 	laptop_col.position = Vector3(0, 0.22, 0.05)
 	laptop.add_child(laptop_col)
-	var label := Label3D.new()
-	label.text = "POSTE TECHNICIEN  [T]"
-	label.position = Vector3(0, 0.72, 0)
-	label.font_size = 24
-	label.pixel_size = 0.003
-	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.no_depth_test = true
-	laptop.add_child(label)
+	_spawn_kenney_prop_local(laptop, "furniture/computerKeyboard.glb", Vector3(0, 0.032, 0.18), 0, 0.9)
+
 
 
 func _add_box(pos: Vector3, size: Vector3, mat: Material) -> void:
@@ -691,6 +710,7 @@ func _build_ui() -> void:
 
 	_status_label = Label.new()
 	_status_label.position = Vector2(16, 55)
+	_status_label.visible = false
 	layer.add_child(_status_label)
 
 	_feedback_label = Label.new()
@@ -699,7 +719,7 @@ func _build_ui() -> void:
 	layer.add_child(_feedback_label)
 
 	var crosshair := Label.new()
-	crosshair.text = "+"
+	crosshair.text = "·"
 	crosshair.set_anchors_preset(Control.PRESET_CENTER)
 	crosshair.position = Vector2(-5, -10)
 	crosshair.add_theme_font_size_override("font_size", 20)
@@ -755,10 +775,9 @@ func _update_help_text() -> void:
 	if not _catalog.is_empty():
 		selected = _catalog[_selected_index]["label"]
 	_help_label.visible = bool(GameState.settings.get("show_help_overlay", true))
-	_help_label.text = (
-		"ZQSD deplacer   |   Souris regarder   |   Tab materiel (%s)   |   E poser\n"
-		+ "Clic sur port cabler / debrancher   |   T console   |   X retirer   |   Echap pause"
-	) % selected
+	_help_label.text = "BACKBONE  /  NETOPS
+TAB  Équipement    ·    E  Poser %s" % selected
+
 
 
 ## --- Objet tenu en main (viewmodel) ------------------------------------------
@@ -1247,6 +1266,7 @@ func _build_objectives_panel() -> void:
 	panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	panel.position = Vector2(-260, 12)
 	panel.custom_minimum_size = Vector2(240, 0)
+	panel.visible = false
 	layer.add_child(panel)
 
 	var vbox := VBoxContainer.new()
@@ -1468,6 +1488,9 @@ func _spawn_device_mesh(pos: Vector3, device_name: String, category: String, yaw
 		"table":
 			size = Vector3(1.6, 0.8, 0.9)
 			collision_offset = Vector3(0, 0.4, 0)
+	# Compact cabinets are 19-inch wide; preserve depth so port faces remain ahead of rack collision.
+	if compact and category in RACKABLE_CATEGORIES:
+		body.scale.x = 0.52 / size.x
 	var col := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = size
@@ -1505,13 +1528,11 @@ func _add_local_box(parent: Node3D, pos: Vector3, size: Vector3, mat: Material) 
 func _add_device_label(parent: Node3D, device_name: String, pos: Vector3, compact := false) -> void:
 	var label := Label3D.new()
 	label.text = device_name
-	label.position = pos
-	label.font_size = 14 if compact else 36
-	label.pixel_size = 0.0014 if compact else 0.0042
-	label.modulate = Color("e8f7ff")
-	label.outline_size = 3
-	label.no_depth_test = not compact
-	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.position = Vector3(pos.x, minf(pos.y, 0.86), 0.345 if parent.get_meta("category", "") == "rack" else 0.285)
+	label.font_size = 24
+	label.pixel_size = 0.00075 if compact else 0.0012
+	label.modulate = Color("c6d6d5")
+	label.outline_size = 0
 	parent.add_child(label)
 
 
@@ -1656,6 +1677,14 @@ func _build_rack_model(body: Node3D, device_name: String) -> void:
 	for y in [-0.93, -0.47, 0.0, 0.47, 0.93]:
 		_add_local_box(body, Vector3(0, y, -0.31), Vector3(0.6, 0.03, 0.03), rail)
 	_add_local_box(body, Vector3(0, 0, -0.33), Vector3(0.58, 1.86, 0.02), rail)
+	for x in [-0.30, 0.30]:
+		_add_local_box(body, Vector3(x, 0, 0), Vector3(0.018, 1.88, 0.66), frame)
+		for i in 32:
+			_add_local_box(body, Vector3(x * 0.9, -0.84 + i * 0.052, 0.337), Vector3(0.012, 0.016, 0.004), rail)
+	for y in [-0.94, 0.94]:
+		_add_local_box(body, Vector3(0, y, 0), Vector3(0.64, 0.055, 0.72), frame)
+	for x in [-0.23, 0.23]:
+		_add_local_box(body, Vector3(x, -0.965, 0.22), Vector3(0.075, 0.06, 0.075), rail)
 	# Panneau de brassage (decor) monte dans le haut de la baie : rangee de
 	# connecteurs sous collerette claire, comme un vrai panneau 24 ports.
 	var panel := _material(Color("14181b"), 0.5, 0.3)
@@ -1751,7 +1780,7 @@ func _add_device_ports(body: Node3D, device_name: String, category: String, comp
 		_port_leds["%s|%s" % [device_name, iface]] = led
 		var port_col := CollisionShape3D.new()
 		var port_shape := BoxShape3D.new()
-		port_shape.size = Vector3(0.21, 0.17, 0.15)
+		port_shape.size = Vector3(0.14, 0.05, 0.15) if category in ["switch", "switch_l3"] else Vector3(0.15, 0.12, 0.15)
 		port_col.shape = port_shape
 		port.add_child(port_col)
 		body.add_child(port)
@@ -1760,9 +1789,9 @@ func _add_device_ports(body: Node3D, device_name: String, category: String, comp
 			port_label.text = iface
 			port_label.position = local_pos + Vector3(0, -0.075, 0.04)
 			port_label.font_size = 20
-			port_label.pixel_size = 0.0022
-			port_label.no_depth_test = true
-			port_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			port_label.pixel_size = 0.0012
+			port_label.no_depth_test = false
+			port_label.billboard = BaseMaterial3D.BILLBOARD_DISABLED
 			body.add_child(port_label)
 		_interface_positions["%s|%s" % [device_name, iface]] = body.to_global(local_pos)
 
@@ -2808,6 +2837,7 @@ func _update_inspection_panel() -> void:
 	var lines := ["%s  |  %s" % [device_name, category.to_upper()]]
 	var interfaces: Array = DeviceInterfaces.BY_CATEGORY.get(category, [])
 	for iface in interfaces:
+		if iface != targeted: continue
 		var used: bool = iface in _used_interfaces.get(device_name, [])
 		var marker: String = ">" if iface == targeted else " "
 		var link_state: String = "LIEN" if NetSim.link_protocol_up(device_name, iface) \

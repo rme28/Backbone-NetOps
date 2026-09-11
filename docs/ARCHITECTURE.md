@@ -129,3 +129,12 @@ add without touching the level code.
 `bridge/server.py` plus `engine/ns3/` remain available as an optional deep
 simulation backend (see README). Gameplay currently relies on NetSim, which
 covers VLANs and gateways that the ns-3 scenario format does not.
+
+## Interior art pass
+
+`world/interior_art.gd` builds architecture and decoration, independent of NetSim.
+It retains starter equipment coordinates and the event journal. Furniture uses
+shared materials and licensed Kenney GLBs; `docs/THIRD_PARTY_ASSETS.md` lists sources.
+`BACKBONE_INTERIOR_TEST=1 godot --headless --path game scenes/world/server_room.tscn`
+checks player capsule clearance through eight doors, glass collision, and each
+starter switch port by physics raycast. Screenshots are stored in `artifacts/visual/`.

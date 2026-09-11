@@ -1,0 +1,5 @@
+# External art
+- Kenney Furniture Kit — https://kenney.nl/assets/furniture-kit — CC0. Office seating, peripherals, plants, lounge, kitchenette and storage props. License: game/assets/kenney/LICENSE-furniture-kit.txt.
+- Existing Kenney Space Kit — https://kenney.nl/assets/space-kit — CC0; license retained alongside assets.
+- Existing Kenney Building Kit — https://kenney.nl/assets/building-kit — CC0; license retained alongside assets.
+- Desktop display artwork and procedural surface textures: original project work.
