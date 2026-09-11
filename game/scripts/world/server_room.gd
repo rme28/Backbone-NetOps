@@ -2346,8 +2346,12 @@ func _show_interfaces_detail() -> void:
 		_append_terminal("%s is %s, line protocol is %s\n" % [iface, admin, protocol])
 		if not str(state["description"]).is_empty():
 			_append_terminal("  Description: %s\n" % state["description"])
-		if not str(state["address"]).is_empty():
-			_append_terminal("  Internet address is %s\n" % state["address"])
+		var shown_address := str(state["address"])
+		if shown_address == "dhcp":
+			var lease := str(NetSim.effective_address(_terminal_device, iface))
+			shown_address = "%s (dhcp)" % lease if not lease.is_empty() else "dhcp (no lease)"
+		if not shown_address.is_empty():
+			_append_terminal("  Internet address is %s\n" % shown_address)
 		if _is_switch_device():
 			if str(state.get("mode", "access")) == "trunk":
 				_append_terminal("  Switchport: trunk, allowed VLANs %s\n" % str(state.get("trunk_allowed", "all")))
@@ -2872,6 +2876,9 @@ func _on_save_pressed() -> void:
 
 
 func _on_quit_to_menu() -> void:
+	# Sauvegarde automatique avant de quitter, pour ne jamais perdre la partie.
+	if not GameState.save_name.strip_edges().is_empty():
+		GameState.save()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE  # souris libre pour le menu
 	get_tree().change_scene_to_file(MENU_SCENE)
 
