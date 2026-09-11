@@ -202,7 +202,7 @@ func _build_header() -> Control:
 	badge_style.content_margin_bottom = 7
 	badge.add_theme_stylebox_override("panel", badge_style)
 	var version := Label.new()
-	version.text = "ALPHA 0.4.0  /  ns-3 ENGINE"
+	version.text = "ALPHA 0.5.0 DEV  /  NETSIM ENGINE"
 	version.add_theme_font_size_override("font_size", 13)
 	version.add_theme_color_override("font_color", Color("9fd4ee"))
 	badge.add_child(version)

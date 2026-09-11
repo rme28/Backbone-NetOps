@@ -114,6 +114,13 @@ Environment variables, inert in normal play:
 | BACKBONE_SCREENSHOT_SETUP=func | call a setup method before the shot |
 | BACKBONE_SELFTEST=1 | run the end to end selftest |
 
+## Known limitations (candidates for future work)
+
+Not modeled yet: DHCP, DNS, NAT, MAC address tables, spanning tree, wireless
+radio coverage (access points bridge their wired ports), tagged subinterfaces
+on routers. The NetSim rebuild-on-change design makes these straightforward to
+add without touching the level code.
+
 ## ns-3 bridge
 
 `bridge/server.py` plus `engine/ns3/` remain available as an optional deep

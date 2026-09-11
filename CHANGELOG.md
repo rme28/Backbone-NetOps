@@ -12,6 +12,7 @@ Versions follow SemVer with an alpha pre-release channel until the project reach
 - New terminal commands, all wired to the simulation: vlan, name, no vlan, switchport mode access, switchport mode trunk, switchport access vlan, switchport trunk allowed vlan, ip default-gateway, no ip route, show vlan brief, show interfaces, traceroute
 - show ip interface brief now reports both Status and Protocol columns
 - Cable disconnection: click an occupied port to unplug it, journaled and replayable
+- Device removal: aim a device and press X to remove it (cables unplug first, rack slots are freed, saves replay correctly)
 - Port status LEDs on every device: green when the link is up, amber when cabled but down
 - Contextual action prompt above the crosshair (connect, unplug, open console, rack)
 - South building wing: corridor, open space offices with desks, reception, entrance, and a technical closet with the operator WAN entry point

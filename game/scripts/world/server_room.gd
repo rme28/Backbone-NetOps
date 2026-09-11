@@ -70,6 +70,7 @@ var _used_interfaces: Dictionary = {}     # device_name -> Array[String]
 var _cable_start: String = ""
 var _cable_start_interface: String = ""
 var _cable_nodes: Dictionary = {}         # cle de lien -> Node3D du cable (pour debrancher)
+var _device_bodies: Dictionary = {}       # device_name -> StaticBody3D (pour retirer l'equipement)
 var _port_leds: Dictionary = {}           # "device|iface" -> MeshInstance3D de la LED d'etat
 var _device_configs: Dictionary = {}      # device_name -> configuration CLI
 var _held_root: Node3D                     # objet tenu en main (viewmodel), enfant de la camera
@@ -200,7 +201,17 @@ func _run_selftest() -> void:
 	check.call("ping_ok journalise", has_ping_event)
 	check.call("objectif premier ping accompli", Objectives.is_completed("first_ping"))
 
-	print("SELFTEST %s (%d checks)" % ["PASSED" if failures.is_empty() else "FAILED", 10])
+	# Retrait d'equipement : liens debranches, config purgee, replay coherent.
+	var pcb_body: Node3D = _device_bodies.get("PC-B")
+	_apply_event_visual({"type": "remove_link", "dev1": "PC-B", "iface1": "eth0", "dev2": "SW-CORE", "iface2": "eth1"})
+	GameState.record({"type": "remove_link", "dev1": "PC-B", "iface1": "eth0", "dev2": "SW-CORE", "iface2": "eth1"})
+	_apply_event_visual({"type": "remove_device", "name": "PC-B"})
+	GameState.record({"type": "remove_device", "name": "PC-B"})
+	check.call("equipement retire du modele", not NetSim.device_exists("PC-B"))
+	check.call("corps 3d supprime", pcb_body == null or pcb_body.is_queued_for_deletion())
+	check.call("port du switch libere", not ("eth1" in _used_interfaces.get("SW-CORE", [])))
+
+	print("SELFTEST %s (%d checks)" % ["PASSED" if failures.is_empty() else "FAILED", 13])
 	get_tree().quit(0 if failures.is_empty() else 1)
 
 
@@ -730,7 +741,7 @@ func _update_help_text() -> void:
 	_help_label.visible = bool(GameState.settings.get("show_help_overlay", true))
 	_help_label.text = (
 		"ZQSD deplacer   |   Souris regarder   |   Tab materiel (%s)   |   E poser\n"
-		+ "Clic sur port cabler   |   T console   |   Echap pause"
+		+ "Clic sur port cabler / debrancher   |   T console   |   X retirer   |   Echap pause"
 	) % selected
 
 
@@ -1331,6 +1342,30 @@ func _apply_event_visual(event: Dictionary) -> void:
 			if _cable_nodes.has(key):
 				_cable_nodes[key].queue_free()
 				_cable_nodes.erase(key)
+		"remove_device":
+			var device_name: String = event.get("name", "")
+			if _device_bodies.has(device_name):
+				_device_bodies[device_name].queue_free()
+				_device_bodies.erase(device_name)
+			# Libere l'emplacement de baie si l'equipement etait racke.
+			var pos: Vector3 = _device_positions.get(device_name, Vector3.INF)
+			if pos != Vector3.INF:
+				var rack_name := _find_containing_rack(pos)
+				if not rack_name.is_empty() and _racks.has(rack_name):
+					_racks[rack_name]["count"] = maxi(0, int(_racks[rack_name].get("count", 0)) - 1)
+			_device_categories.erase(device_name)
+			_device_positions.erase(device_name)
+			_device_yaws.erase(device_name)
+			_used_interfaces.erase(device_name)
+			_device_configs.erase(device_name)
+			GameState.device_configs.erase(device_name)
+			_racks.erase(device_name)
+			for led_key in _port_leds.keys():
+				if str(led_key).begins_with(device_name + "|"):
+					_port_leds.erase(led_key)
+			for iface_key in _interface_positions.keys():
+				if str(iface_key).begins_with(device_name + "|"):
+					_interface_positions.erase(iface_key)
 
 
 ## Cle canonique d'un lien, independante de l'ordre des extremites.
@@ -1366,6 +1401,7 @@ func _spawn_device_mesh(pos: Vector3, device_name: String, category: String, yaw
 	add_child(body)
 	body.global_position = pos
 	body.rotation.y = yaw
+	_device_bodies[device_name] = body
 
 	var size := Vector3(1.4, 0.16, 0.62)
 	var collision_offset := Vector3.ZERO
@@ -1752,6 +1788,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				_flash_feedback("Vise un equipement pour ouvrir sa console")
 			else:
 				_open_terminal(target)
+			return
+		if event.keycode == KEY_X:
+			_remove_targeted_device()
 			return
 	if _palette_open:
 		return
@@ -2537,6 +2576,32 @@ func _handle_cable_click() -> void:
 	_cable_start_interface = ""
 
 
+## Retire l'equipement vise (touche X) : debranche d'abord tous ses cables,
+## puis journalise un remove_device. Les meubles integres au batiment et le
+## poste technicien ne sont pas retirables.
+func _remove_targeted_device() -> void:
+	var hit := _raycast_target()
+	var target: String = hit.get("device", "")
+	if target.is_empty() or hit.get("technician_laptop", false):
+		_flash_feedback("Vise un equipement a retirer")
+		return
+	if not _device_categories.has(target):
+		return
+	if _device_categories.get(target, "") == "rack" and int(_racks.get(target, {}).get("count", 0)) > 0:
+		_flash_feedback("Vide d'abord la baie avant de la retirer")
+		return
+	for link in NetSim.links_from_events(GameState.events):
+		if link["dev1"] == target or link["dev2"] == target:
+			var unlink := {"type": "remove_link", "dev1": link["dev1"], "iface1": link["iface1"],
+				"dev2": link["dev2"], "iface2": link["iface2"]}
+			_apply_event_visual(unlink)
+			GameState.record(unlink)
+	var event := {"type": "remove_device", "name": target}
+	_apply_event_visual(event)
+	GameState.record(event)
+	_flash_feedback("%s retire" % target)
+
+
 ## Debranche le cable relie a (dev, iface) : evenement remove_link journalise.
 func _disconnect_link(dev: String, iface: String) -> void:
 	for link in NetSim.links_from_events(GameState.events):
@@ -2655,9 +2720,9 @@ func _update_context_prompt(hit: Dictionary) -> void:
 				and str(_catalog[_selected_index].get("id", "")) in RACKABLE_CATEGORIES:
 			text = "[E] Racker %s ici   [T] Console" % str(_catalog[_selected_index].get("label", ""))
 		elif category in ["rack", "table"]:
-			text = "%s" % device_name
+			text = "%s   [X] Retirer" % device_name
 		else:
-			text = "[T] Console de %s" % device_name
+			text = "[T] Console de %s   [X] Retirer" % device_name
 	elif not _cable_start.is_empty():
 		text = "Cable en main depuis %s %s : vise un port libre" % [_cable_start, _cable_start_interface]
 	_context_label.text = text
