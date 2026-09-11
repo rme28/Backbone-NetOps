@@ -14,6 +14,7 @@ Versions follow SemVer with an alpha pre-release channel until the project reach
 - Cable disconnection: click an occupied port to unplug it, journaled and replayable
 - Device removal: aim a device and press X to remove it (cables unplug first, rack slots are freed, saves replay correctly)
 - Port status LEDs on every device: green when the link is up, amber when cabled but down
+- Ports now render as real RJ45 connectors (light bezel, dark cavity), racks include a patch panel, offices gained a printer corner
 - Contextual action prompt above the crosshair (connect, unplug, open console, rack)
 - South building wing: corridor, open space offices with desks, reception, entrance, and a technical closet with the operator WAN entry point
 - Starter infrastructure seeded on new games through regular journal events (two racks, a core switch, an office workstation)

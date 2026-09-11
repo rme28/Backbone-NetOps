@@ -439,6 +439,7 @@ func _build_south_wing(wall_mat: Material, ceiling_mat: Material) -> void:
 	for outlet_x in [-8.0, -6.0, -3.0, 0.0]:
 		_add_wall_outlet(Vector3(outlet_x, 0.35, 13.72))
 	_add_plant(Vector3(1.8, 0, 20.2))
+	_build_printer_corner(Vector3(-9.2, 0, 20.3))
 
 	# --- Accueil (x 3..10, z 13.6..21.2) ---
 	_add_box(Vector3(6.5, -0.1, 17.4), Vector3(7, 0.2, 7.6), office_floor)
@@ -534,6 +535,20 @@ func _build_reception_desk(pos: Vector3) -> void:
 	_add_visual_box(pos + Vector3(0, 1.12, 0), Vector3(2.6, 0.05, 0.7), counter)
 	_add_box(pos + Vector3(1.45, 0.55, 0.85), Vector3(0.5, 1.1, 1.6), front)
 	_add_visual_box(pos + Vector3(1.45, 1.12, 0.85), Vector3(0.7, 0.05, 1.8), counter)
+
+
+## Coin reprographie (decor) : meuble bas + imprimante multifonction.
+func _build_printer_corner(pos: Vector3) -> void:
+	var cabinet := _material(Color("50565a"), 0.6, 0.15, true)
+	_add_box(pos + Vector3(0, 0.35, 0), Vector3(0.9, 0.7, 0.6), cabinet)
+	var shell := _material(Color("d8dce0"), 0.5, 0.05, true)
+	var dark := _material(Color("2a2f33"), 0.5, 0.2)
+	_add_visual_box(pos + Vector3(0, 0.86, 0), Vector3(0.62, 0.32, 0.5), shell)
+	_add_visual_box(pos + Vector3(0, 1.045, 0), Vector3(0.5, 0.05, 0.42), dark)
+	_add_visual_box(pos + Vector3(0, 0.78, 0.26), Vector3(0.4, 0.06, 0.1), dark)
+	var led := _material(Color("113322"), 0.4, 0.0, false, Color("2fdd7a"), 1.4)
+	_add_visual_box(pos + Vector3(0.22, 0.95, 0.251), Vector3(0.02, 0.02, 0.01), led)
+	_add_signage(pos + Vector3(0, 1.35, 0.1), "IMPRIMANTE", Color("9aabba"), PI)
 
 
 func _add_wall_outlet(pos: Vector3) -> void:
@@ -1641,6 +1656,16 @@ func _build_rack_model(body: Node3D, device_name: String) -> void:
 	for y in [-0.93, -0.47, 0.0, 0.47, 0.93]:
 		_add_local_box(body, Vector3(0, y, -0.31), Vector3(0.6, 0.03, 0.03), rail)
 	_add_local_box(body, Vector3(0, 0, -0.33), Vector3(0.58, 1.86, 0.02), rail)
+	# Panneau de brassage (decor) monte dans le haut de la baie : rangee de
+	# connecteurs sous collerette claire, comme un vrai panneau 24 ports.
+	var panel := _material(Color("14181b"), 0.5, 0.3)
+	_add_local_box(body, Vector3(0, 0.72, 0.28), Vector3(0.56, 0.09, 0.03), panel)
+	var jack_frame := _material(Color("9aa4aa"), 0.35, 0.6)
+	var jack_hole := _material(Color("05070a"), 0.5)
+	for i in 8:
+		var x := -0.235 + i * 0.067
+		_add_local_box(body, Vector3(x, 0.72, 0.296), Vector3(0.042, 0.05, 0.008), jack_frame)
+		_add_local_box(body, Vector3(x, 0.717, 0.301), Vector3(0.028, 0.032, 0.006), jack_hole)
 	_add_device_label(body, device_name, Vector3(0, 1.02, 0.0))
 
 
@@ -1687,7 +1712,7 @@ func _add_device_ports(body: Node3D, device_name: String, category: String, comp
 				var half := ceili(interfaces.size() / 2.0)
 				var row := index / half
 				var col := index % half
-				local_pos = Vector3((col - (half - 1) / 2.0) * 0.18, 0.02 if row == 0 else -0.03, 0.312)
+				local_pos = Vector3((col - (half - 1) / 2.0) * 0.16, 0.028 if row == 0 else -0.028, 0.312)
 			"firewall": local_pos = Vector3(0.15 + (index - (interfaces.size() - 1) / 2.0) * 0.1, -0.02, 0.297)
 			"pc", "nas", "server": local_pos = Vector3(-0.12 + index * 0.16, -0.20, 0.355)
 			"access_point": local_pos = Vector3(-0.10 + index * 0.20, -0.02, 0.40)
@@ -1697,12 +1722,23 @@ func _add_device_ports(body: Node3D, device_name: String, category: String, comp
 		port.position = local_pos
 		port.set_meta("device_name", device_name)
 		port.set_meta("interface_name", iface)
+		# Connecteur : collerette metallique claire + cavite sombre, comme un
+		# RJ45 reel sur panneau fonce (sinon les ports noirs sont invisibles).
+		# Plus petit sur les switches dont le chassis 1U est bas.
+		var jack_size := Vector3(0.10, 0.068, 0.05) if category in ["switch", "switch_l3"] else Vector3(0.13, 0.09, 0.055)
 		var port_mesh := MeshInstance3D.new()
 		var box := BoxMesh.new()
-		box.size = Vector3(0.145, 0.10, 0.055)
-		box.material = _material(Color("050708"), 0.4, 0.7)
+		box.size = jack_size
+		box.material = _material(Color("aeb8be"), 0.35, 0.55)
 		port_mesh.mesh = box
 		port.add_child(port_mesh)
+		var cavity := MeshInstance3D.new()
+		var cavity_box := BoxMesh.new()
+		cavity_box.size = Vector3(jack_size.x * 0.72, jack_size.y * 0.66, 0.02)
+		cavity_box.material = _material(Color("05070a"), 0.5)
+		cavity.mesh = cavity_box
+		cavity.position = Vector3(0, 0, jack_size.z / 2.0 - 0.004)
+		port.add_child(cavity)
 		# LED d'etat du port (au-dessus du connecteur), pilotee par NetSim :
 		# eteinte = libre, verte = lien actif, orange = cable mais down.
 		var led := MeshInstance3D.new()
@@ -1710,7 +1746,7 @@ func _add_device_ports(body: Node3D, device_name: String, category: String, comp
 		led_box.size = Vector3(0.03, 0.018, 0.012)
 		led_box.material = _material(Color("101314"), 0.5)
 		led.mesh = led_box
-		led.position = Vector3(0, 0.062, 0.026)
+		led.position = Vector3(0, 0.056, 0.026)
 		port.add_child(led)
 		_port_leds["%s|%s" % [device_name, iface]] = led
 		var port_col := CollisionShape3D.new()

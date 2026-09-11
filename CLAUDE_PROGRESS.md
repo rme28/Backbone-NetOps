@@ -18,12 +18,11 @@ Working file for session handover. Branch: custom-cli. All commits tested.
 
 ## Remaining priorities
 
-1. Visual pass on network gear models (user feedback pending since 0.4.0; reference photos in /home/romain/Bureau/Projets/Images/)
-2. More decor in server room walls (cable trays exist, could add patch panel visuals inside racks)
-3. Sound effects (none exist; needs assets)
-4. Not modeled yet: DNS, NAT, MAC tables, STP, wireless radio, router subinterfaces (documented in ARCHITECTURE.md)
-5. Real key remapping (explicitly postponed by the owner earlier)
-6. Scenario framework itself is out of scope by request; the query API and event seeding are ready for it
+1. Further visual pass on network gear models if the owner still dislikes them (reference photos in /home/romain/Bureau/Projets/Images/; ports are now bezeled RJ45, racks have patch panels)
+2. Sound effects (none exist; needs assets)
+3. Not modeled yet: DNS, NAT, MAC tables, STP, wireless radio, router subinterfaces (documented in ARCHITECTURE.md)
+4. Real key remapping (explicitly postponed by the owner earlier)
+5. Scenario framework itself is out of scope by request; the query API and event seeding are ready for it
 
 ## Important bugs
 
